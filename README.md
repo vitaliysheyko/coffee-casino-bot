@@ -5,41 +5,38 @@ Telegram-бот помощник для игры «Кофейное казино
 
 ## Стек
 
-- Python 3.11+
+- Python 3.12
 - aiogram 3.x
 - SQLite + SQLAlchemy (async)
 
-## Быстрый старт
+## Деплой на Railway
 
-1. Клонируй репозиторий
-2. Создай виртуальное окружение:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/macOS
+1. Зайди на [railway.app](https://railway.app) → New Project → Deploy from GitHub repo
+2. Выбери репозиторий `vitaliysheyko/coffee-casino-bot`
+3. В Variables добавь:
    ```
-3. Установи зависимости:
-   ```bash
-   pip install -r requirements.txt
+   BOT_TOKEN=твой_токен_от_BotFather
    ```
-4. Скопируй `.env.example` → `.env` и укажи токен бота:
-   ```
-   BOT_TOKEN=123456:ABC...
-   ```
-5. Запусти:
-   ```bash
-   python main.py
-   ```
+4. Deploy
+
+Бот запустится командой `python main.py`.
+
+### Важно про базу
+
+Сейчас используется SQLite. На Railway данные могут сброситься при редеплое.  
+Для продакшена позже можно подключить PostgreSQL (Railway даёт его в 1 клик).
+
+## Локальный запуск
+
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # вписать BOT_TOKEN
+python main.py
+```
 
 ## Возможности MVP
 
-**Ведущий:**
-- Создание / редактирование / удаление лотов
-- Создание игры (код + deep-link)
-- Запуск раундов с произвольным таймером
-- Показ интересного факта
-- Ревейл правильных ответов
-
-**Игрок:**
-- Присоединение по коду/ссылке
-- Кнопка «Я сделал ставки»
-- Просмотр правильных ответов после ревейла
+**Ведущий:** лоты, создание игры, раунды, факт, ревейл  
+**Игрок:** join по ссылке, ставки, просмотр ответов
