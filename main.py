@@ -1,12 +1,13 @@
 import asyncio
 import logging
 import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from threading import Thread
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiohttp import web
 
 from bot.config import settings
 from bot.database import init_db
@@ -18,13 +19,27 @@ logger = logging.getLogger(__name__)
 PORT = int(os.environ.get("PORT", 10000))
 
 
-async def health_handler(request):
-    return web.Response(text="OK")
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def run_health_server():
+    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    server.serve_forever()
 
 
 async def main():
     await init_db()
     logger.info("Database initialized")
+
+    Thread(target=run_health_server, daemon=True).start()
+    logger.info("Health server started on port %s", PORT)
 
     bot = Bot(
         token=settings.bot_token,
@@ -35,14 +50,6 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(lots.router)
     dp.include_router(game.router)
-
-    app = web.Application()
-    app.router.add_get("/health", health_handler)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    logger.info("Health server started on port %s", PORT)
 
     logger.info("Bot starting...")
     await dp.start_polling(bot)
