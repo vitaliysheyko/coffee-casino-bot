@@ -176,11 +176,15 @@ async def process_lot_field(message: Message, state: FSMContext):
     await _go_to_next_field(message, state, lot_data, idx + 1)
 
 
+def _is_bot_message(msg) -> bool:
+    return msg.from_user is not None and msg.from_user.is_bot
+
+
 async def _go_to_next_field(message_or_msg, state: FSMContext, lot_data: dict, next_idx: int):
     if next_idx >= len(LOT_FIELDS):
         await state.set_state(LotForm.preview)
         text = _build_preview(lot_data)
-        if hasattr(message_or_msg, "edit_text"):
+        if _is_bot_message(message_or_msg):
             await message_or_msg.edit_text(text, reply_markup=lot_preview_kb())
         else:
             await message_or_msg.answer(text, reply_markup=lot_preview_kb())
@@ -198,7 +202,7 @@ async def _go_to_next_field(message_or_msg, state: FSMContext, lot_data: dict, n
     else:
         kb = skip_cancel_kb()
 
-    if hasattr(message_or_msg, "edit_text"):
+    if _is_bot_message(message_or_msg):
         await message_or_msg.edit_text(prompt, reply_markup=kb)
     else:
         await message_or_msg.answer(prompt, reply_markup=kb)
