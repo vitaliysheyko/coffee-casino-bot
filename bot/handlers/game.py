@@ -43,12 +43,46 @@ logger = logging.getLogger(__name__)
 MIN_PLAYERS = 1
 
 _active_timers: dict[int, asyncio.Task] = {}
+_active_refreshers: dict[int, asyncio.Task] = {}
 
 
 def _cancel_timer(game_id: int):
     task = _active_timers.pop(game_id, None)
     if task and not task.done():
         task.cancel()
+
+
+async def _run_refresher(bot, chat_id: int, message_id: int, host_id: int, game_id: int):
+    try:
+        while True:
+            await asyncio.sleep(8)
+            async with async_session() as session:
+                game = await get_game_by_id(session, game_id)
+                if not game or game.status != "waiting":
+                    _active_refreshers.pop(game_id, None)
+                    break
+
+                players_count = len(game.players)
+                can_start = players_count >= MIN_PLAYERS
+                text = _host_waiting_text(game)
+
+                link = f"https://t.me/coffee_casino_bot?start={game.code}"
+                full = (
+                    f"✅ Игра <b>{game.code}</b>\n"
+                    f"Таймер раунда: {game.timer_minutes} мин\n\n"
+                    f"Ссылка: {link}\n\n"
+                    f"{text}"
+                )
+
+            try:
+                await bot.edit_message_text(
+                    full, chat_id=chat_id, message_id=message_id,
+                    reply_markup=game_waiting_kb(can_start),
+                )
+            except Exception:
+                logger.debug("Refresher edit skipped (no changes)", exc_info=True)
+    except asyncio.CancelledError:
+        pass
 
 
 def _host_waiting_text(game) -> str:
@@ -183,6 +217,8 @@ async def cb_start_round(callback: CallbackQuery, state: FSMContext):
 
         lots = await get_user_lots(session, callback.from_user.id)
 
+    _active_refreshers.pop(game.id, None)
+
     if not lots:
         await callback.answer("Сначала создайте хотя бы один лот", show_alert=True)
         return
@@ -248,12 +284,18 @@ async def process_timer(message: Message, state: FSMContext):
             game = await get_game_by_id(session, new_game_id)
         await state.clear()
         link = f"https://t.me/coffee_casino_bot?start={game.code}"
-        await message.answer(
+        sent = await message.answer(
             f"✅ Игра <b>{game.code}</b>\n"
             f"Таймер раунда: {minutes} мин\n\n"
             f"Ссылка для игроков: {link}\n"
             f"Ожидаем участников... (минимум {MIN_PLAYERS} игрока)",
             reply_markup=game_waiting_kb(False),
+        )
+
+        if game.id in _active_refreshers:
+            _active_refreshers[game.id].cancel()
+        _active_refreshers[game.id] = asyncio.create_task(
+            _run_refresher(message.bot, sent.chat.id, sent.message_id, message.from_user.id, game.id)
         )
         return
 

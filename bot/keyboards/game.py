@@ -6,7 +6,7 @@ from bot.models import Lot
 
 def game_waiting_kb(can_start: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="Обновить список", callback_data="game:refresh"))
+    builder.row(InlineKeyboardButton(text="🔄 Обновить", callback_data="game:refresh"))
     if can_start:
         builder.row(InlineKeyboardButton(text="Начать раунд", callback_data="game:start_round"))
     builder.row(InlineKeyboardButton(text="Отменить игру", callback_data="game:cancel"))
