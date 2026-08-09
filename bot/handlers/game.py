@@ -38,6 +38,8 @@ from bot.states.game import GameForm
 router = Router()
 logger = logging.getLogger(__name__)
 
+MIN_PLAYERS = 2
+
 
 def _host_waiting_text(game) -> str:
     players_count = len(game.players)
@@ -46,8 +48,8 @@ def _host_waiting_text(game) -> str:
         f"Игроков: {players_count}\n"
         f"{format_players_list(game)}\n\n"
     )
-    if players_count < 4:
-        text += f"Нужно ещё минимум {4 - players_count} игрока(ов) для старта."
+    if players_count < MIN_PLAYERS:
+        text += f"Нужно ещё минимум {MIN_PLAYERS - players_count} игрока(ов) для старта."
     else:
         text += "Можно начинать раунд!"
     return text
@@ -64,7 +66,7 @@ async def cb_game_create(callback: CallbackQuery, state: FSMContext):
             await callback.message.edit_text(
                 f"У вас уже есть активная игра: <b>{existing.code}</b>\n\n"
                 f"{_host_waiting_text(existing)}",
-                reply_markup=game_waiting_kb(len(existing.players) >= 4),
+                reply_markup=game_waiting_kb(len(existing.players) >= MIN_PLAYERS),
             )
             await callback.answer()
             return
@@ -77,7 +79,7 @@ async def cb_game_create(callback: CallbackQuery, state: FSMContext):
         f"Код для игроков: <b>{game.code}</b>\n"
         f"Ссылка: {link}\n\n"
         f"Игроков: 0\n\n"
-        f"Ожидаем участников...\n(минимум 4 игрока)"
+        f"Ожидаем участников...\n(минимум {MIN_PLAYERS} игрока)"
     )
     await callback.message.edit_text(text, reply_markup=game_waiting_kb(False))
     await callback.answer()
@@ -153,8 +155,8 @@ async def cb_start_round(callback: CallbackQuery, state: FSMContext):
             return
 
         game = await get_game_by_id(session, game.id)
-        if len(game.players) < 4 and game.status == "waiting":
-            await callback.answer("Нужно минимум 4 игрока", show_alert=True)
+        if len(game.players) < MIN_PLAYERS and game.status == "waiting":
+            await callback.answer(f"Нужно минимум {MIN_PLAYERS} игрока", show_alert=True)
             return
 
         lots = await get_user_lots(session, callback.from_user.id)
