@@ -1,6 +1,6 @@
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.database import async_session
@@ -46,10 +46,10 @@ def _is_bot_message(msg) -> bool:
     return msg.from_user is not None and msg.from_user.is_bot
 
 
-def _title_cancel_kb() -> InlineKeyboardBuilder:
+def _title_cancel_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Отменить", callback_data="lots:cancel"))
-    return builder
+    return builder.as_markup()
 
 
 def _title_prompt() -> str:
@@ -83,10 +83,10 @@ async def _go_to_next_field(target, state: FSMContext, lot_data: dict, next_idx:
             await target.answer(text, reply_markup=lot_preview_kb())
         return
 
-    field_name, prompt, required = LOT_FIELDS[next_idx]
+    field_name, prompt, _ = LOT_FIELDS[next_idx]
     await state.set_state(getattr(LotForm, field_name))
 
-    kb = _title_cancel_kb().as_markup() if field_name == "title" else skip_cancel_kb()
+    kb = _title_cancel_kb() if field_name == "title" else skip_cancel_kb()
 
     if _is_bot_message(target):
         await target.edit_text(prompt, reply_markup=kb)
@@ -168,7 +168,7 @@ async def cb_lot_create(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(LotForm.title)
     await state.update_data(lot_data={}, editing_lot_id=None)
-    await callback.message.edit_text(_title_prompt(), reply_markup=_title_cancel_kb().as_markup())
+    await callback.message.edit_text(_title_prompt(), reply_markup=_title_cancel_kb())
     await callback.answer()
 
 
@@ -303,7 +303,7 @@ async def cb_lot_restart(callback: CallbackQuery, state: FSMContext):
         kb = skip_cancel_kb()
     else:
         prompt = _title_prompt()
-        kb = _title_cancel_kb().as_markup()
+        kb = _title_cancel_kb()
     await callback.message.edit_text(prompt, reply_markup=kb)
     await callback.answer()
 

@@ -21,7 +21,9 @@ async def get_lot_by_id(session: AsyncSession, lot_id: int, owner_id: int) -> Op
 
 
 async def create_lot(session: AsyncSession, owner_id: int, data: dict) -> Lot:
-    lot = Lot(owner_id=owner_id, **data)
+    from bot.services.games import sanitize_lot_data
+    clean = sanitize_lot_data(data)
+    lot = Lot(owner_id=owner_id, **clean)
     session.add(lot)
     await session.commit()
     await session.refresh(lot)
@@ -29,7 +31,8 @@ async def create_lot(session: AsyncSession, owner_id: int, data: dict) -> Lot:
 
 
 async def update_lot(session: AsyncSession, lot: Lot, data: dict) -> Lot:
-    for key, value in data.items():
+    from bot.services.games import sanitize_lot_data
+    for key, value in sanitize_lot_data(data).items():
         setattr(lot, key, value)
     await session.commit()
     await session.refresh(lot)

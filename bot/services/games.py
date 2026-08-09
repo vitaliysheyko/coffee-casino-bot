@@ -1,13 +1,18 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import random
 import string
-from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from bot.models import Game, GamePlayer, Lot, User
+from bot.models import Game, GamePlayer, User
+
+GAME_FIELDS = {"title", "country", "region", "altitude", "process", "variety", "score", "roast_level", "roast_date", "fact", "notes"}
 
 
 def generate_game_code(length: int = 4) -> str:
@@ -60,9 +65,12 @@ async def get_active_game_for_host(session: AsyncSession, host_id: int) -> Optio
 
 
 async def add_player_to_game(session: AsyncSession, game: Game, user: User) -> GamePlayer:
-    for p in game.players:
-        if p.user_id == user.id:
-            return p
+    result = await session.execute(
+        select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        return existing
 
     player = GamePlayer(game_id=game.id, user_id=user.id)
     session.add(player)
@@ -75,9 +83,15 @@ async def get_or_create_user(session: AsyncSession, tg_user) -> User:
     result = await session.execute(select(User).where(User.id == tg_user.id))
     user = result.scalar_one_or_none()
     if user:
-        user.full_name = tg_user.full_name
-        user.username = tg_user.username
-        await session.commit()
+        changed = False
+        if user.full_name != tg_user.full_name:
+            user.full_name = tg_user.full_name
+            changed = True
+        if user.username != tg_user.username:
+            user.username = tg_user.username
+            changed = True
+        if changed:
+            await session.commit()
         return user
 
     user = User(
@@ -94,10 +108,14 @@ async def get_or_create_user(session: AsyncSession, tg_user) -> User:
 def format_players_list(game: Game) -> str:
     if not game.players:
         return "Пока никого нет"
-    
+
     lines = []
     for p in game.players:
         name = p.user.full_name if p.user else "Игрок"
-        mark = " \u2713" if p.has_bet else ""
-        lines.append(f"\u2022 {name}{mark}")
+        mark = " ✓" if p.has_bet else ""
+        lines.append(f"• {name}{mark}")
     return "\n".join(lines)
+
+
+def sanitize_lot_data(data: dict) -> dict:
+    return {k: v for k, v in data.items() if k in GAME_FIELDS}

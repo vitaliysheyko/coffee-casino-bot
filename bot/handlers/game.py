@@ -31,9 +31,12 @@ from bot.services.lots import (
     format_lot_for_host,
     format_lot_for_players,
 )
+import logging
+
 from bot.states.game import GameForm
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 def _host_waiting_text(game) -> str:
@@ -226,10 +229,14 @@ async def _launch_round(
     async with async_session() as session:
         game = await get_active_game_for_host(session, user_id)
         if not game:
+            logger.error("No active game for host %s at round launch", user_id)
+            await message_or_msg.answer("Не удалось найти активную игру.")
             return
 
         lot = await get_lot_by_id(session, lot_id, user_id)
         if not lot:
+            logger.error("Lot %s not found for user %s at round launch", lot_id, user_id)
+            await message_or_msg.answer("Лот не найден.")
             return
 
         lot_number = (game.current_lot_number or 0) + 1
@@ -272,7 +279,7 @@ async def _launch_round(
         try:
             await bot.send_message(p.user_id, player_text, reply_markup=player_bet_kb())
         except Exception:
-            pass
+            logger.warning("Failed to send round start to player %s", p.user_id, exc_info=True)
 
 
 async def _show_round_active(callback: CallbackQuery, game):
@@ -313,11 +320,11 @@ async def cb_place_bet(callback: CallbackQuery):
         await session.commit()
         game = await get_game_by_id(session, player.game_id)
 
-    await callback.message.edit_text(
-        f"Раунд идёт\n\n"
-        f"<b>Лот {game.current_lot_number}</b>\n\n"
-        f"Вы сделали ставки \u2713\n"
-        f"Ожидаем остальных и ревейл от ведущего."
+        await callback.message.edit_text(
+            f"Раунд идёт\n\n"
+            f"<b>Лот {game.current_lot_number}</b>\n\n"
+            f"Вы сделали ставки ✓\n"
+            f"Ожидаем остальных и ревейл от ведущего."
     )
     await callback.answer("Ставки приняты!")
 
@@ -332,14 +339,14 @@ async def cb_place_bet(callback: CallbackQuery):
             f"{format_players_list(game)}"
         )
         if bet_count == total and total > 0:
-            host_text += "\n\n\u2705 Все игроки сделали ставки!"
+            host_text += "\n\n✅ Все игроки сделали ставки!"
         await callback.bot.send_message(
             game.host_id,
             host_text,
             reply_markup=round_active_host_kb(),
         )
     except Exception:
-        pass
+        logger.warning("Failed to update host message", exc_info=True)
 
 
 @router.callback_query(F.data == "game:show_fact")
@@ -363,7 +370,7 @@ async def cb_show_fact(callback: CallbackQuery):
                 p.user_id, f"📌 Интересный факт:\n\n{fact}"
             )
         except Exception:
-            pass
+            logger.warning("Failed to send fact to player %s", p.user_id, exc_info=True)
 
     await callback.answer("Факт отправлен игрокам!")
 
@@ -396,7 +403,7 @@ async def cb_reveal(callback: CallbackQuery):
         try:
             await callback.bot.send_message(p.user_id, player_text)
         except Exception:
-            pass
+            logger.warning("Failed to send reveal to player %s", p.user_id, exc_info=True)
 
     await callback.answer()
 
@@ -447,7 +454,7 @@ async def cb_finish_confirm(callback: CallbackQuery):
                         p.user_id, "Игра завершена.\n\nСпасибо за участие!"
                     )
                 except Exception:
-                    pass
+                    logger.warning("Failed to send finish to player %s", p.user_id, exc_info=True)
 
     await callback.message.edit_text(
         "Игра завершена.\n\nСпасибо за игру!",
