@@ -15,7 +15,7 @@ from bot.services.games import (
     get_game_by_id,
     get_or_create_user,
 )
-from bot.services.lots import create_preset_lots, get_user_lots
+from bot.services.lots import get_user_lots
 from bot.services.script import format_game_setup_prompt
 from bot.states.game import GameForm
 
@@ -28,28 +28,6 @@ async def cb_fsm_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("Отменено.", reply_markup=main_menu_kb())
     await callback.answer()
-
-
-@router.callback_query(F.data == "game:add_presets")
-async def cb_add_presets(callback: CallbackQuery):
-    async with async_session() as session:
-        user = await get_or_create_user(session, callback.from_user)
-        existing = await get_user_lots(session, user.id)
-        if len(existing) >= 4:
-            await callback.answer("У вас уже есть лоты", show_alert=True)
-            return
-        
-        lots = await create_preset_lots(session, user.id)
-        await callback.answer(f"Добавлено {len(lots)} пресетных лотов", show_alert=True)
-        
-        game = await get_active_game_for_host(session, user.id)
-        if game:
-            await callback.message.edit_text(
-                f"✅ Добавлено {len(lots)} лотов!\n\n"
-                f"Игроков: {len(game.players)}\n"
-                f"Лотов: {len(existing) + len(lots)}",
-                reply_markup=game_setup_kb(),
-            )
 
 
 @router.callback_query(F.data == "game:create")
@@ -152,11 +130,12 @@ async def process_chips_setup(message: Message, state: FSMContext):
 
     await state.update_data(game_config=config, sel_lots=[], all_lot_ids=[l.id for l in lots])
     await state.set_state(GameForm.setup_lots)
+    total = config['total_rounds']
     await message.answer(
         f"☕ <b>Выберите лоты для игры</b>\n"
-        f"Раундов: {config['total_rounds']} | Фишек: {chips}\n\n"
-        f"Нажимайте на лоты в <b>порядке раундов</b>.\n"
-        f"Первый выбранный = Раунд 1, второй = Раунд 2, и т.д.",
+        f"Раундов: {total} | Фишек: {chips}\n\n"
+        f"Выберите <b>ровно {total} лотов</b> — по одному на раунд.\n"
+        f"Порядок выбора = порядок раундов.",
         reply_markup=select_game_lots_kb(lots),
     )
 
@@ -166,9 +145,14 @@ async def cb_sel_lot(callback: CallbackQuery, state: FSMContext):
     lot_id = int(callback.data.split(":")[2])
     data = await state.get_data()
     sel = list(data.get("sel_lots", []))
+    config = data["game_config"]
+    total = config["total_rounds"]
 
     if lot_id in sel:
         sel.remove(lot_id)
+    elif len(sel) >= total:
+        await callback.answer(f"Уже выбрано {total} лотов — максимум для {total} раундов", show_alert=True)
+        return
     else:
         sel.append(lot_id)
 
@@ -217,9 +201,9 @@ async def cb_sel_lots_done(callback: CallbackQuery, state: FSMContext):
     sel = data.get("sel_lots", [])
     config = data["game_config"]
 
-    if len(sel) < config["total_rounds"]:
+    if len(sel) != config["total_rounds"]:
         await callback.answer(
-            f"Нужно минимум {config['total_rounds']} лотов (выбрано {len(sel)})",
+            f"Выберите ровно {config['total_rounds']} лотов (сейчас {len(sel)})",
             show_alert=True,
         )
         return
