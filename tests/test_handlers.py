@@ -99,6 +99,9 @@ async def test_quick_game_creates_game(session, tg_user):
 
 @pytest.mark.asyncio
 async def test_game_create_flow(session, tg_user):
+    user = await get_or_create_user(session, tg_user)
+    await create_lot(session, user.id, {"title": "Test Lot", "country": "Ethiopia"})
+    
     async with patch_session(session):
         cb = make_callback("game:create", tg_user.id)
         state = make_state()

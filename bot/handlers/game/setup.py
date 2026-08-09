@@ -15,6 +15,7 @@ from bot.services.games import (
     get_game_by_id,
     get_or_create_user,
 )
+from bot.services.lots import create_preset_lots, get_user_lots
 from bot.services.script import format_game_setup_prompt
 from bot.states.game import GameForm
 
@@ -29,6 +30,28 @@ async def cb_fsm_cancel(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data == "game:add_presets")
+async def cb_add_presets(callback: CallbackQuery):
+    async with async_session() as session:
+        user = await get_or_create_user(session, callback.from_user)
+        existing = await get_user_lots(session, user.id)
+        if len(existing) >= 4:
+            await callback.answer("У вас уже есть лоты", show_alert=True)
+            return
+        
+        lots = await create_preset_lots(session, user.id)
+        await callback.answer(f"Добавлено {len(lots)} пресетных лотов", show_alert=True)
+        
+        game = await get_active_game_for_host(session, user.id)
+        if game:
+            await callback.message.edit_text(
+                f"✅ Добавлено {len(lots)} лотов!\n\n"
+                f"Игроков: {len(game.players)}\n"
+                f"Лотов: {len(existing) + len(lots)}",
+                reply_markup=game_setup_kb(),
+            )
+
+
 @router.callback_query(F.data == "game:create")
 async def cb_game_create(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -37,6 +60,17 @@ async def cb_game_create(callback: CallbackQuery, state: FSMContext):
         if existing:
             await callback.message.edit_text(
                 f"У вас уже есть игра <b>{existing.code}</b>. Завершите её.",
+                reply_markup=main_menu_kb(),
+            )
+            await callback.answer()
+            return
+        
+        lots = await get_user_lots(session, callback.from_user.id)
+        if not lots:
+            await callback.message.edit_text(
+                "⚠️ <b>У вас нет лотов!</b>\n\n"
+                "Для игры нужны лоты с кофе.\n\n"
+                "Создайте лоты через «Мои лоты» или используйте «Быстрая игра» с пресетными лотами.",
                 reply_markup=main_menu_kb(),
             )
             await callback.answer()

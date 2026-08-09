@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 
 @router.callback_query(F.data == "game:score_round")
 async def cb_score_round(callback: CallbackQuery, state: FSMContext):
+    logger.info("cb_score_round called by user %s", callback.from_user.id)
     async with async_session() as session:
         game = await get_active_game_for_host(session, callback.from_user.id)
         if not game or game.status != GameStatus.REVEAL:
+            logger.warning("No active game in REVEAL status for user %s", callback.from_user.id)
             await callback.answer("Нет раунда для подсчёта", show_alert=True)
             return
         game = await get_game_by_id(session, game.id)
@@ -55,6 +57,7 @@ async def cb_score_round(callback: CallbackQuery, state: FSMContext):
         scoring_host_id=callback.from_user.id,
     )
     await state.set_state(GameForm.scoring)
+    logger.info("FSM state set to GameForm.scoring, players: %s", list(player_data.keys()))
     await _show_scoring_for_player(callback.message, state, 0, cats, player_data)
     await callback.answer()
 
@@ -98,6 +101,7 @@ async def cb_scoring_cancel(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(GameForm.scoring, F.data.startswith("scoring:cat:"))
 async def cb_scoring_toggle(callback: CallbackQuery, state: FSMContext):
+    logger.info("cb_scoring_toggle called: %s", callback.data)
     _, _, player_id_str, cat = callback.data.split(":")
     player_id = int(player_id_str)
 
@@ -120,6 +124,7 @@ async def cb_scoring_toggle(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(GameForm.scoring, F.data.startswith("scoring:done:"))
 async def cb_scoring_done(callback: CallbackQuery, state: FSMContext):
+    logger.info("cb_scoring_done called: %s", callback.data)
     _, _, player_id_str = callback.data.split(":")
     player_id = int(player_id_str)
 
