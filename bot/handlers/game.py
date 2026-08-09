@@ -84,15 +84,13 @@ async def cb_game_create(callback: CallbackQuery, state: FSMContext):
 
         game = await create_game(session, user.id)
 
-    link = f"https://t.me/coffee_casino_bot?start={game.code}"
-    text = (
-        f"Игра создана!\n\n"
-        f"Код для игроков: <b>{game.code}</b>\n"
-        f"Ссылка: {link}\n\n"
-        f"Игроков: 0\n\n"
-        f"Ожидаем участников...\n(минимум {MIN_PLAYERS} игрока)"
+    await state.update_data(new_game_id=game.id)
+    await state.set_state(GameForm.waiting_timer)
+    await callback.message.edit_text(
+        f"Игра <b>{game.code}</b> создана!\n\n"
+        f"Укажите длительность раунда в минутах (целое число от 1 до 30):",
+        reply_markup=cancel_timer_kb(),
     )
-    await callback.message.edit_text(text, reply_markup=game_waiting_kb(False))
     await callback.answer()
 
 
@@ -192,13 +190,25 @@ async def cb_select_lot(callback: CallbackQuery, state: FSMContext):
             await callback.answer("Лот не найден", show_alert=True)
             return
 
+        game = await get_active_game_for_host(session, callback.from_user.id)
+        if not game:
+            await callback.answer("Нет активной игры", show_alert=True)
+            return
+
+        empty = get_empty_game_fields(lot)
+
     await state.update_data(selected_lot_id=lot_id)
-    await state.set_state(GameForm.waiting_timer)
-    await callback.message.edit_text(
-        f"Лот: <b>{lot.title}</b>\n\n"
-        f"Укажите длительность раунда в минутах (целое число от 1 до 30):",
-        reply_markup=cancel_timer_kb(),
-    )
+
+    if empty:
+        text = (
+            f"Внимание!\n\n"
+            f"В этом лоте нет данных по полям:\n"
+            f"• " + "\n• ".join(empty) + "\n\n"
+            f"Сообщите игрокам, что на эти категории в данном раунде ставки не принимаются."
+        )
+        await callback.message.edit_text(text, reply_markup=empty_fields_warning_kb())
+    else:
+        await _launch_round(callback.message, state, callback.from_user.id, lot_id, edit=True)
     await callback.answer()
 
 
@@ -214,22 +224,33 @@ async def process_timer(message: Message, state: FSMContext):
 
     data = await state.get_data()
     lot_id = data.get("selected_lot_id")
-    await state.update_data(timer_minutes=minutes)
+    new_game_id = data.get("new_game_id")
 
-    async with async_session() as session:
-        lot = await get_lot_by_id(session, lot_id, message.from_user.id)
-        empty = get_empty_game_fields(lot)
-
-    if empty:
-        text = (
-            f"Внимание!\n\n"
-            f"В этом лоте нет данных по полям:\n"
-            f"\u2022 " + "\n\u2022 ".join(empty) + "\n\n"
-            f"Сообщите игрокам, что на эти категории в данном раунде ставки не принимаются."
+    if new_game_id:
+        async with async_session() as session:
+            game = await get_game_by_id(session, new_game_id)
+            if game:
+                game.timer_minutes = minutes
+                await session.commit()
+            game = await get_game_by_id(session, new_game_id)
+        await state.clear()
+        link = f"https://t.me/coffee_casino_bot?start={game.code}"
+        await message.answer(
+            f"✅ Игра <b>{game.code}</b>\n"
+            f"Таймер раунда: {minutes} мин\n\n"
+            f"Ссылка для игроков: {link}\n"
+            f"Ожидаем участников... (минимум {MIN_PLAYERS} игрока)",
+            reply_markup=game_waiting_kb(False),
         )
-        await message.answer(text, reply_markup=empty_fields_warning_kb())
-    else:
-        await _launch_round(message, state, message.from_user.id, lot_id, minutes)
+        return
+
+    if lot_id:
+        async with async_session() as session:
+            game = await get_active_game_for_host(session, message.from_user.id)
+            if game:
+                game.timer_minutes = minutes
+                await session.commit()
+        await _launch_round(message, state, message.from_user.id, lot_id)
 
 
 @router.callback_query(F.data == "game:confirm_start")
@@ -237,14 +258,12 @@ async def cb_confirm_start(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lot_id = data.get("selected_lot_id")
     minutes = data.get("timer_minutes")
-    await _launch_round(
-        callback.message, state, callback.from_user.id, lot_id, minutes, edit=True
-    )
+    await _launch_round(callback.message, state, callback.from_user.id, lot_id, edit=True)
     await callback.answer()
 
 
 async def _launch_round(
-    message_or_msg, state: FSMContext, user_id: int, lot_id: int, minutes: int, edit: bool = False
+    message_or_msg, state: FSMContext, user_id: int, lot_id: int, edit: bool = False
 ):
     bot = message_or_msg.bot
 

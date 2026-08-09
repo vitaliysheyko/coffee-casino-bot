@@ -1,12 +1,14 @@
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.database import async_session
 from bot.keyboards.common import main_menu_kb, back_to_main_kb
-from bot.keyboards.game import game_waiting_kb
+from bot.keyboards.game import game_waiting_kb, cancel_timer_kb
 from bot.services.games import get_game_by_code, add_player_to_game, get_or_create_user, create_game, get_active_game_for_host
 from bot.services.lots import create_preset_lots, get_user_lots
+from bot.states.game import GameForm
 
 router = Router()
 
@@ -77,7 +79,7 @@ async def cb_help(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "quick_game")
-async def cb_quick_game(callback: CallbackQuery):
+async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
     async with async_session() as session:
         user = await get_or_create_user(session, callback.from_user)
 
@@ -107,14 +109,12 @@ async def cb_quick_game(callback: CallbackQuery):
 
         game = await create_game(session, user.id)
 
-    link = f"https://t.me/coffee_casino_bot?start={game.code}"
+    await state.update_data(new_game_id=game.id)
+    await state.set_state(GameForm.waiting_timer)
     await callback.message.edit_text(
-        f"🎲 <b>Быстрая игра готова!</b>\n\n"
-        f"Код: <b>{game.code}</b>\n"
-        f"Ссылка: {link}\n\n"
-        f"Вам добавлено 6 готовых лотов.\n"
-        f"Можно сразу начинать раунд когда соберутся игроки (мин. 2).\n\n"
-        f"Участники переходят по ссылке или вводят /start {game.code}",
-        reply_markup=game_waiting_kb(False),
+        f"🎲 Быстрая игра <b>{game.code}</b>\n"
+        f"6 лотов готовы!\n\n"
+        f"Укажите длительность раунда в минутах (целое число от 1 до 30):",
+        reply_markup=cancel_timer_kb(),
     )
     await callback.answer()
