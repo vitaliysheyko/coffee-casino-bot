@@ -63,10 +63,21 @@ async def cb_game_create(callback: CallbackQuery, state: FSMContext):
         existing = await get_active_game_for_host(session, user.id)
         if existing:
             existing = await get_game_by_id(session, existing.id)
+            if existing.status == "waiting":
+                text = _host_waiting_text(existing)
+                kb = game_waiting_kb(len(existing.players) >= MIN_PLAYERS)
+            elif existing.status == "round_active":
+                text = _round_active_text(existing)
+                kb = round_active_host_kb()
+            elif existing.status == "reveal":
+                text = _reveal_text(existing)
+                kb = reveal_host_kb()
+            else:
+                text = "Восстановить игру не удалось."
+                kb = main_menu_kb()
             await callback.message.edit_text(
-                f"У вас уже есть активная игра: <b>{existing.code}</b>\n\n"
-                f"{_host_waiting_text(existing)}",
-                reply_markup=game_waiting_kb(len(existing.players) >= MIN_PLAYERS),
+                f"🔁 Восстановлена игра <b>{existing.code}</b>\n\n{text}",
+                reply_markup=kb,
             )
             await callback.answer()
             return
@@ -293,18 +304,37 @@ async def _launch_round(
             logger.warning("Failed to send round start to player %s", p.user_id, exc_info=True)
 
 
-async def _show_round_active(callback: CallbackQuery, game):
+def _round_active_text(game) -> str:
     lot = game.current_lot
     bet_count = sum(1 for p in game.players if p.has_bet)
     title = lot.title if lot else "?"
-    text = (
+    return (
         f"Раунд идёт\n\n"
         f"<b>Лот {game.current_lot_number} — {title}</b>\n"
         f"Таймер: {game.timer_minutes} мин\n\n"
         f"Уже поставили: {bet_count} из {len(game.players)}\n"
         f"{format_players_list(game)}"
     )
-    await callback.message.edit_text(text, reply_markup=round_active_host_kb())
+
+
+async def _show_round_active(callback: CallbackQuery, game):
+    await callback.message.edit_text(
+        _round_active_text(game), reply_markup=round_active_host_kb()
+    )
+
+
+def _reveal_text(game) -> str:
+    lot = game.current_lot
+    return (
+        f"Ревейл — Лот {game.current_lot_number}\n\n"
+        f"{format_lot_for_host(lot) if lot else 'Лот не найден'}"
+    )
+
+
+async def _show_reveal(callback: CallbackQuery, game):
+    await callback.message.edit_text(
+        _reveal_text(game), reply_markup=reveal_host_kb()
+    )
 
 
 @router.callback_query(F.data == "game:place_bet")
@@ -417,15 +447,6 @@ async def cb_reveal(callback: CallbackQuery):
             logger.warning("Failed to send reveal to player %s", p.user_id, exc_info=True)
 
     await callback.answer()
-
-
-async def _show_reveal(callback: CallbackQuery, game):
-    lot = game.current_lot
-    text = (
-        f"Ревейл — Лот {game.current_lot_number}\n\n"
-        f"{format_lot_for_host(lot) if lot else 'Лот не найден'}"
-    )
-    await callback.message.edit_text(text, reply_markup=reveal_host_kb())
 
 
 @router.callback_query(F.data == "game:end_round_early")
