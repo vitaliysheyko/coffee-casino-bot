@@ -4,7 +4,9 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.database import async_session
 from bot.keyboards.common import main_menu_kb, back_to_main_kb
-from bot.services.games import get_game_by_code, add_player_to_game, get_or_create_user
+from bot.keyboards.game import game_waiting_kb
+from bot.services.games import get_game_by_code, add_player_to_game, get_or_create_user, create_game, get_active_game_for_host
+from bot.services.lots import create_preset_lots, get_user_lots
 
 router = Router()
 
@@ -71,4 +73,48 @@ async def cb_help(callback: CallbackQuery):
         "Бот не считает фишки и не заменяет живую игру."
     )
     await callback.message.edit_text(text, reply_markup=back_to_main_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "quick_game")
+async def cb_quick_game(callback: CallbackQuery):
+    async with async_session() as session:
+        user = await get_or_create_user(session, callback.from_user)
+
+        existing = await get_active_game_for_host(session, user.id)
+        if existing:
+            game = await get_game_by_code(session, existing.code)
+            await callback.message.edit_text(
+                f"У вас уже есть активная игра: <b>{existing.code}</b>\n\n"
+                f"Завершите её перед созданием новой.",
+                reply_markup=main_menu_kb(),
+            )
+            await callback.answer()
+            return
+
+        lots = await get_user_lots(session, user.id)
+        if len(lots) < 4:
+            await callback.message.edit_text(
+                "🎲 Создаю 6 готовых лотов для быстрой игры...",
+                reply_markup=None,
+            )
+            await create_preset_lots(session, user.id)
+        else:
+            await callback.message.edit_text(
+                "🎲 Создаю новую игру...",
+                reply_markup=None,
+            )
+
+        game = await create_game(session, user.id)
+
+    link = f"https://t.me/coffee_casino_bot?start={game.code}"
+    await callback.message.edit_text(
+        f"🎲 <b>Быстрая игра готова!</b>\n\n"
+        f"Код: <b>{game.code}</b>\n"
+        f"Ссылка: {link}\n\n"
+        f"Вам добавлено 6 готовых лотов.\n"
+        f"Можно сразу начинать раунд когда соберутся игроки (мин. 4).\n\n"
+        f"Участники переходят по ссылке или вводят /start {game.code}",
+        reply_markup=game_waiting_kb(False),
+    )
     await callback.answer()

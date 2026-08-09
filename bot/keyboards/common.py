@@ -6,6 +6,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Мои лоты", callback_data="lots:list"))
     builder.row(InlineKeyboardButton(text="Создать игру", callback_data="game:create"))
+    builder.row(InlineKeyboardButton(text="🎲 Быстрая игра", callback_data="quick_game"))
     builder.row(InlineKeyboardButton(text="Помощь", callback_data="help"))
     return builder.as_markup()
 

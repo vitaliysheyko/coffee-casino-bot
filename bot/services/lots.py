@@ -105,3 +105,93 @@ def get_empty_game_fields(lot: Lot) -> list[str]:
         "Оценка": lot.score,
     }
     return [name for name, value in mapping.items() if not value]
+
+
+PRESET_LOTS = [
+    {
+        "title": "Эфиопия Иргачеффе",
+        "country": "Эфиопия",
+        "region": "Иргачеффе",
+        "altitude": "1900–2200 м",
+        "process": "мытая",
+        "variety": "Heirloom",
+        "score": "88",
+        "roast_level": "светлая",
+        "roast_date": "2026-06",
+        "fact": "Эфиопия — родина кофе. Иргачеффе известен яркими цветочными и цитрусовыми нотами.",
+        "notes": "Жасмин, бергамот, лимон. Лёгкое тело.",
+    },
+    {
+        "title": "Колумбия Уила",
+        "country": "Колумбия",
+        "region": "Уила",
+        "altitude": "1600–1800 м",
+        "process": "мытая",
+        "variety": "Caturra",
+        "score": "86",
+        "roast_level": "средняя",
+        "roast_date": "2026-05",
+        "fact": "Колумбия — третий по величине производитель кофе в мире.",
+        "notes": "Карамель, красное яблоко, молочный шоколад.",
+    },
+    {
+        "title": "Бразилия Серрадо",
+        "country": "Бразилия",
+        "region": "Серрадо",
+        "altitude": "1000–1200 м",
+        "process": "натуральная",
+        "variety": "Bourbon",
+        "score": "84",
+        "roast_level": "средняя",
+        "roast_date": "2026-06",
+        "fact": "Бразилия — крупнейший производитель кофе, более трети мирового объёма.",
+        "notes": "Орехи, тёмный шоколад, низкая кислотность.",
+    },
+    {
+        "title": "Кения Ньери",
+        "country": "Кения",
+        "region": "Ньери",
+        "altitude": "1700–2000 м",
+        "process": "мытая",
+        "variety": "SL28, SL34",
+        "score": "90",
+        "roast_level": "светлая",
+        "roast_date": "2026-04",
+        "fact": "Кенийский кофе славится яркой кислотностью чёрной смородины и красных ягод.",
+        "notes": "Чёрная смородина, грейпфрут, комплексная кислотность, сочное тело.",
+    },
+    {
+        "title": "Гватемала Антигуа",
+        "country": "Гватемала",
+        "region": "Антигуа",
+        "altitude": "1500–1700 м",
+        "process": "мытая",
+        "variety": "Typica, Caturra",
+        "score": "87",
+        "roast_level": "средняя",
+        "roast_date": "2026-05",
+        "fact": "Вулканическая почва Антигуа придаёт кофе особую глубину и минеральность.",
+        "notes": "Какао, ириска, лёгкий дымок. Округлое тело.",
+    },
+    {
+        "title": "Коста-Рика Тарразу",
+        "country": "Коста-Рика",
+        "region": "Тарразу",
+        "altitude": "1400–1700 м",
+        "process": "хани",
+        "variety": "Caturra, Catuai",
+        "score": "86",
+        "roast_level": "светлая",
+        "roast_date": "2026-06",
+        "fact": "Коста-Рика запретила выращивание робусты — только арабика. Хани-процессинг популяризован именно здесь.",
+        "notes": "Тропические фрукты, мёд, среднее тело. Хани даёт дополнительную сладость.",
+    },
+]
+
+
+async def create_preset_lots(session: AsyncSession, owner_id: int) -> list[Lot]:
+    lots = []
+    for data in PRESET_LOTS:
+        lot = await create_lot(session, owner_id, data)
+        lots.append(lot)
+    return lots
