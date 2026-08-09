@@ -8,3 +8,4 @@ class GameForm(StatesGroup):
     setup_lots = State()
     add_player = State()
     scoring = State()
+    add_extra_round = State()

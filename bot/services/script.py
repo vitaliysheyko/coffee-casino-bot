@@ -1,3 +1,5 @@
+from typing import Optional
+
 from bot.models import Lot
 
 
@@ -61,20 +63,31 @@ def format_lot_cheatsheet(lot: Lot) -> str:
     return "\n".join(lines)
 
 
-def format_game_setup_prompt(code: str, timer: int, total_rounds: int, players: int, web_url: str = "") -> str:
+def format_game_setup_prompt(code: str, timer: int, total_rounds: int, players: int, web_url: str = "", lot_titles: Optional[list] = None) -> str:
     if web_url:
         timer_url = f"{web_url.rstrip('/')}/timer/{code.upper()}"
         timer_line = f"📺 <a href=\"{timer_url}\">Таймер для проектора</a>"
     else:
         timer_line = f"📺 Отправьте /timer_{code}, чтобы получить ссылку на таймер"
-    return (
-        f"🎲 <b>Игра {code} настроена</b>\n\n"
-        f"Раундов: {total_rounds}\n"
-        f"Таймер раунда: {timer} мин\n"
-        f"Игроков: {players}\n\n"
-        f"{timer_line}\n\n"
-        f"<i>Когда все готовы — нажмите «Начать игру»</i>"
-    )
+
+    lines = [
+        f"🎲 <b>Игра {code} настроена</b>\n",
+        f"Раундов: {total_rounds}",
+        f"Таймер раунда: {timer} мин",
+        f"Игроков: {players}",
+    ]
+
+    if lot_titles:
+        lines.append("")
+        lines.append("<b>Меню дегустации:</b>")
+        for i, title in enumerate(lot_titles, 1):
+            lines.append(f"  Раунд {i}: {title}")
+
+    lines.append("")
+    lines.append(timer_line)
+    lines.append("")
+    lines.append("<i>Когда все готовы — нажмите «Начать игру»</i>")
+    return "\n".join(lines)
 
 
 def format_finish_summary(leaderboard: str, winner_name: str) -> str:

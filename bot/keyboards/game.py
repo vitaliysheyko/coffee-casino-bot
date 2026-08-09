@@ -102,6 +102,7 @@ def post_round_kb(is_last: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if not is_last:
         builder.row(InlineKeyboardButton(text="🎯 Следующий раунд", callback_data="game:start_round"))
+    builder.row(InlineKeyboardButton(text="➕ Добавить раунд", callback_data="game:add_round"))
     builder.row(InlineKeyboardButton(text="📊 Турнирная таблица", callback_data="game:leaderboard"))
     builder.row(InlineKeyboardButton(text="🏁 Завершить игру", callback_data="game:finish_game"))
     return builder.as_markup()
@@ -110,6 +111,7 @@ def post_round_kb(is_last: bool) -> InlineKeyboardMarkup:
 def leaderboard_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🎯 Следующий раунд", callback_data="game:start_round"))
+    builder.row(InlineKeyboardButton(text="➕ Добавить раунд", callback_data="game:add_round"))
     builder.row(InlineKeyboardButton(text="🏁 Завершить игру", callback_data="game:finish_game"))
     return builder.as_markup()
 

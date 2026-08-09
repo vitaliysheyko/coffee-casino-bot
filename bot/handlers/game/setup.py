@@ -15,7 +15,7 @@ from bot.services.games import (
     get_game_by_id,
     get_or_create_user,
 )
-from bot.services.lots import get_user_lots
+from bot.services.lots import get_lot_by_id, get_user_lots
 from bot.services.script import format_game_setup_prompt
 from bot.states.game import GameForm
 
@@ -223,8 +223,16 @@ async def cb_sel_lots_done(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
     code = game.code
+
+    lot_titles = []
+    if game.lot_ids:
+        async with async_session() as session:
+            for lid in game.lot_ids:
+                lot = await get_lot_by_id(session, lid, callback.from_user.id)
+                lot_titles.append(lot.title if lot else f"#{lid}")
+
     await callback.message.edit_text(
-        format_game_setup_prompt(code, config["timer_minutes"], config["total_rounds"], 0, settings.web_url),
+        format_game_setup_prompt(code, config["timer_minutes"], config["total_rounds"], 0, settings.web_url, lot_titles),
         reply_markup=game_setup_kb(),
     )
-    await callback.answer(f"Создана игра {code} с {len(selected_ids)} лотами")
+    await callback.answer(f"Создана игра {code} с {len(sel)} лотами")

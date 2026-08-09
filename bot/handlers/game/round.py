@@ -14,6 +14,7 @@ from bot.keyboards.game import (
     round_active_host_kb,
     reveal_kb,
     swap_lot_kb,
+    post_round_kb,
 )
 from bot.keyboards.common import main_menu_kb
 from bot.services.games import get_active_game_for_host, get_game_by_id, format_players_list
@@ -21,6 +22,7 @@ from bot.services.lots import get_user_lots, get_lot_by_id, format_lot_for_host
 from bot.services.scoring import active_categories
 from bot.services.script import format_host_card, format_lot_cheatsheet, category_hint
 from bot.handlers.game._timer import cancel_timer, _run_timer, register_timer
+from bot.states.game import GameForm
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -30,12 +32,18 @@ logger = logging.getLogger(__name__)
 async def cb_start_game(callback: CallbackQuery, state: FSMContext):
     async with async_session() as session:
         game = await get_active_game_for_host(session, callback.from_user.id)
-        if not game or game.status != GameStatus.WAITING:
-            await callback.answer("Сейчас нельзя начать игру", show_alert=True)
+        if not game:
+            await callback.answer("Нет активной игры", show_alert=True)
+            return
+        if game.status != GameStatus.WAITING:
+            await callback.answer("Игра уже началась или завершена", show_alert=True)
             return
         game = await get_game_by_id(session, game.id)
         if not game.players:
-            await callback.answer("Добавьте хотя бы одного игрока", show_alert=True)
+            await callback.answer("Добавьте хотя бы одного игрока перед стартом", show_alert=True)
+            return
+        if not game.lot_ids:
+            await callback.answer("Выберите лоты для раундов перед стартом", show_alert=True)
             return
 
     await state.clear()
@@ -271,6 +279,72 @@ async def cb_swap_cancel(callback: CallbackQuery):
     host_text = format_host_card(game.current_round, game.total_rounds, lot.title if lot else "?", timer, len(game.players))
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.answer()
+
+
+@router.callback_query(F.data == "game:add_round")
+async def cb_add_round(callback: CallbackQuery, state: FSMContext):
+    async with async_session() as session:
+        game = await get_active_game_for_host(session, callback.from_user.id)
+        if not game:
+            await callback.answer("Нет активной игры", show_alert=True)
+            return
+
+        game.total_rounds += 1
+        await session.commit()
+
+        if game.lot_ids:
+            lot_ids = game.lot_ids.copy()
+            used_ids = set(lot_ids)
+            all_lots = await get_user_lots(session, callback.from_user.id)
+            available = [l for l in all_lots if l.id not in used_ids]
+            if not available:
+                available = all_lots  # если все использованы, показать все
+        else:
+            available = await get_user_lots(session, callback.from_user.id)
+
+    await state.set_state(GameForm.add_extra_round)
+    await state.update_data(extra_round_game_id=game.id)
+
+    await callback.message.edit_text(
+        f"➕ <b>Добавить раунд {game.total_rounds}</b>\n\n"
+        f"Выберите лот для нового раунда:",
+        reply_markup=select_lot_kb(available),
+    )
+    await callback.answer()
+
+
+@router.callback_query(GameForm.add_extra_round, F.data.startswith("game:select_lot:"))
+async def cb_add_round_select_lot(callback: CallbackQuery, state: FSMContext):
+    lot_id = int(callback.data.split(":")[2])
+    data = await state.get_data()
+    game_id = data["extra_round_game_id"]
+
+    async with async_session() as session:
+        lot = await get_lot_by_id(session, lot_id, callback.from_user.id)
+        game = await get_game_by_id(session, game_id)
+        if not game:
+            await state.clear()
+            await callback.message.edit_text("Игра не найдена.", reply_markup=main_menu_kb())
+            await callback.answer()
+            return
+
+        if game.lot_ids is None:
+            game.lot_ids = []
+        game.lot_ids.append(lot.id)
+        await session.commit()
+
+    await state.clear()
+    new_total = game.total_rounds
+    lot_name = lot.title if lot else f"#{lot_id}"
+    is_last = game.current_round >= new_total
+
+    await callback.message.edit_text(
+        f"✅ Добавлен раунд {new_total}: <b>{lot_name}</b>\n"
+        f"Всего раундов: {new_total}\n\n"
+        f"Текущий раунд: {game.current_round}/{new_total}",
+        reply_markup=post_round_kb(is_last),
+    )
+    await callback.answer(f"Добавлен раунд {new_total}")
 
 
 @router.callback_query(F.data == "game:reveal")

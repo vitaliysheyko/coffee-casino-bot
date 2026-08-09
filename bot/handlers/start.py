@@ -89,8 +89,10 @@ async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
         game = await get_game_by_id(session, game.id)
 
     await state.clear()
+
+    lot_titles = [l.title for l in lots]
     await callback.message.edit_text(
-        format_game_setup_prompt(game.code, 3, 6, 0, settings.web_url),
+        format_game_setup_prompt(game.code, 3, 6, 0, settings.web_url, lot_titles),
         reply_markup=game_setup_kb(),
     )
     await callback.answer()
