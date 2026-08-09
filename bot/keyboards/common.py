@@ -18,6 +18,12 @@ def back_to_main_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def cancel_fsm_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="fsm:cancel"))
+    return builder.as_markup()
+
+
 def confirm_kb(yes_data: str, no_data: str, yes_text: str = "Да", no_text: str = "Отмена") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(

@@ -82,7 +82,7 @@ async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
         if len(lots) < 4:
             await create_preset_lots(session, user.id)
 
-        game = await create_game(session, user.id, total_rounds=6, starting_chips=5)
+        game = await create_game(session, user.id, total_rounds=6, starting_chips=10)
         game.timer_minutes = 3
         await session.commit()
         game = await get_game_by_id(session, game.id)

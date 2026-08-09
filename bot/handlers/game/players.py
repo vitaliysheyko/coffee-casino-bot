@@ -8,6 +8,7 @@ from sqlalchemy import select
 from bot.constants import GameStatus
 from bot.database import async_session
 from bot.keyboards.game import game_setup_kb, game_waiting_kb
+from bot.keyboards.common import cancel_fsm_kb
 from bot.models import GamePlayer
 from bot.services.games import (
     get_active_game_for_host,
@@ -25,7 +26,7 @@ async def cb_add_player(callback: CallbackQuery, state: FSMContext):
     await state.set_state(GameForm.add_player)
     await callback.message.edit_text(
         "Введите имя игрока (как его называть за столом):",
-        reply_markup=None,
+        reply_markup=cancel_fsm_kb(),
     )
     await callback.answer()
 

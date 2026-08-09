@@ -210,6 +210,8 @@ async def main():
     logger.info("Web server started on port %s", WEB_PORT)
 
     from aiogram.client.session.aiohttp import AiohttpSession
+    from aiogram.exceptions import TelegramNetworkError
+    
     session = AiohttpSession(timeout=60)
     
     bot = Bot(
@@ -226,7 +228,21 @@ async def main():
     dp.include_router(errors.router)
 
     logger.info("Bot starting...")
-    await dp.start_polling(bot)
+    
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            await dp.start_polling(bot)
+            break
+        except TelegramNetworkError as e:
+            logger.warning("Network error (attempt %d/%d): %s", attempt + 1, max_retries, e)
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                logger.info("Retrying in %ds...", wait_time)
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error("Failed to start bot after %d attempts", max_retries)
+                raise
 
 
 if __name__ == "__main__":

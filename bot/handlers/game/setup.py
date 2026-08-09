@@ -8,7 +8,7 @@ from bot.config import settings
 from bot.constants import GameStatus
 from bot.database import async_session
 from bot.keyboards.game import game_setup_kb
-from bot.keyboards.common import main_menu_kb
+from bot.keyboards.common import main_menu_kb, cancel_fsm_kb
 from bot.services.games import (
     create_game,
     get_active_game_for_host,
@@ -20,6 +20,13 @@ from bot.states.game import GameForm
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+@router.callback_query(F.data == "fsm:cancel")
+async def cb_fsm_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Отменено.", reply_markup=main_menu_kb())
+    await callback.answer()
 
 
 @router.callback_query(F.data == "game:create")
@@ -39,7 +46,7 @@ async def cb_game_create(callback: CallbackQuery, state: FSMContext):
     await state.update_data(game_config={})
     await callback.message.edit_text(
         "🎲 <b>Новая игра</b>\n\nСколько раундов? (введите число от 1 до 12)",
-        reply_markup=None,
+        reply_markup=cancel_fsm_kb(),
     )
     await callback.answer()
 
@@ -58,7 +65,7 @@ async def process_rounds(message: Message, state: FSMContext):
     await state.set_state(GameForm.setup_timer)
     await message.answer(
         f"Раундов: {rounds}\n\nДлительность одного раунда в минутах? (1–30)",
-        reply_markup=None,
+        reply_markup=cancel_fsm_kb(),
     )
 
 
@@ -79,7 +86,7 @@ async def process_timer_setup(message: Message, state: FSMContext):
     await state.set_state(GameForm.setup_chips)
     await message.answer(
         f"Таймер: {minutes} мин\n\nСколько стартовых фишек у каждого игрока? (1–50)",
-        reply_markup=None,
+        reply_markup=cancel_fsm_kb(),
     )
 
 
