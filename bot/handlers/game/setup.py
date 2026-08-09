@@ -150,12 +150,13 @@ async def process_chips_setup(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await state.update_data(game_config=config, sel_lots={}, all_lot_ids=[l.id for l in lots])
+    await state.update_data(game_config=config, sel_lots=[], all_lot_ids=[l.id for l in lots])
     await state.set_state(GameForm.setup_lots)
     await message.answer(
         f"☕ <b>Выберите лоты для игры</b>\n"
         f"Раундов: {config['total_rounds']} | Фишек: {chips}\n\n"
-        f"Рекомендуется выбрать не меньше числа раундов.",
+        f"Нажимайте на лоты в <b>порядке раундов</b>.\n"
+        f"Первый выбранный = Раунд 1, второй = Раунд 2, и т.д.",
         reply_markup=select_game_lots_kb(lots),
     )
 
@@ -164,33 +165,61 @@ async def process_chips_setup(message: Message, state: FSMContext):
 async def cb_sel_lot(callback: CallbackQuery, state: FSMContext):
     lot_id = int(callback.data.split(":")[2])
     data = await state.get_data()
-    sel = data.get("sel_lots", {})
-    key = str(lot_id)
-    sel[key] = not sel.get(key, False)
-    await state.update_data(sel_lots=sel)
+    sel = list(data.get("sel_lots", []))
 
-    selected_ids = {int(k) for k, v in sel.items() if v}
+    if lot_id in sel:
+        sel.remove(lot_id)
+    else:
+        sel.append(lot_id)
+
+    await state.update_data(sel_lots=sel)
+    selected_set = set(sel)
+
     async with async_session() as session:
         lots = await get_user_lots(session, callback.from_user.id)
 
+    rounds_text = _format_round_assignments(sel, {l.id: l for l in lots})
+
     await callback.message.edit_text(
         f"☕ <b>Выберите лоты для игры</b>\n"
-        f"Выбрано: {len(selected_ids)}",
-        reply_markup=select_game_lots_kb(lots, selected_ids),
+        f"Выбрано: {len(sel)}\n\n{rounds_text}",
+        reply_markup=select_game_lots_kb(lots, selected_set),
     )
     await callback.answer()
+
+
+@router.callback_query(GameForm.setup_lots, F.data == "game:sel_lots_clear")
+async def cb_sel_lots_clear(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(sel_lots=[])
+    async with async_session() as session:
+        lots = await get_user_lots(session, callback.from_user.id)
+    await callback.message.edit_text(
+        f"☕ <b>Выберите лоты для игры</b>\nВыбрано: 0",
+        reply_markup=select_game_lots_kb(lots),
+    )
+    await callback.answer()
+
+
+def _format_round_assignments(sel: list, lot_map: dict) -> str:
+    if not sel:
+        return ""
+    lines = []
+    for i, lid in enumerate(sel, 1):
+        lot = lot_map.get(lid)
+        name = lot.title if lot else f"#{lid}"
+        lines.append(f"  <b>Раунд {i}:</b> {name}")
+    return "\n".join(lines)
 
 
 @router.callback_query(GameForm.setup_lots, F.data == "game:sel_lots_done")
 async def cb_sel_lots_done(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    sel = data.get("sel_lots", {})
-    selected_ids = [int(k) for k, v in sel.items() if v]
+    sel = data.get("sel_lots", [])
     config = data["game_config"]
 
-    if len(selected_ids) < config["total_rounds"]:
+    if len(sel) < config["total_rounds"]:
         await callback.answer(
-            f"Нужно минимум {config['total_rounds']} лотов (выбрано {len(selected_ids)})",
+            f"Нужно минимум {config['total_rounds']} лотов (выбрано {len(sel)})",
             show_alert=True,
         )
         return
@@ -202,7 +231,7 @@ async def cb_sel_lots_done(callback: CallbackQuery, state: FSMContext):
             user.id,
             total_rounds=config["total_rounds"],
             starting_chips=config["starting_chips"],
-            lot_ids=selected_ids,
+            lot_ids=sel,
         )
         game.timer_minutes = config["timer_minutes"]
         await session.commit()

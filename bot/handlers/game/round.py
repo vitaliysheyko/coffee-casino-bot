@@ -13,7 +13,9 @@ from bot.keyboards.game import (
     select_lot_kb,
     round_active_host_kb,
     reveal_kb,
+    swap_lot_kb,
 )
+from bot.keyboards.common import main_menu_kb
 from bot.services.games import get_active_game_for_host, get_game_by_id, format_players_list
 from bot.services.lots import get_user_lots, get_lot_by_id, format_lot_for_host
 from bot.services.scoring import active_categories
@@ -169,6 +171,106 @@ async def cb_select_lot(callback: CallbackQuery, state: FSMContext):
     register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
 
     await callback.answer(f"Раунд {round_num} запущен!")
+
+
+@router.callback_query(F.data == "game:swap_lot")
+async def cb_swap_lot(callback: CallbackQuery):
+    async with async_session() as session:
+        game = await get_active_game_for_host(session, callback.from_user.id)
+        if not game or game.status != GameStatus.ROUND_ACTIVE:
+            await callback.answer("Сейчас нельзя заменить лот", show_alert=True)
+            return
+
+        current_lot_id = game.current_lot_id
+
+        if game.lot_ids:
+            lot_ids = [lid for lid in game.lot_ids if lid != current_lot_id]
+            lots = []
+            for lid in lot_ids:
+                lot = await get_lot_by_id(session, lid, callback.from_user.id)
+                if lot:
+                    lots.append(lot)
+        else:
+            user_lots = await get_user_lots(session, callback.from_user.id)
+            lots = [l for l in user_lots if l.id != current_lot_id]
+
+    if not lots:
+        await callback.answer("Нет доступных лотов для замены", show_alert=True)
+        return
+
+    current_name = game.current_lot.title if game.current_lot else "?"
+    await callback.message.edit_text(
+        f"🔄 <b>Замена лота</b>\n\nТекущий: {current_name}\n\nВыберите новый лот:",
+        reply_markup=swap_lot_kb(lots),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("game:swap_to:"))
+async def cb_swap_to(callback: CallbackQuery, state: FSMContext):
+    new_lot_id = int(callback.data.split(":")[2])
+    async with async_session() as session:
+        new_lot = await get_lot_by_id(session, new_lot_id, callback.from_user.id)
+        if not new_lot:
+            await callback.answer("Лот не найден", show_alert=True)
+            return
+
+        game = await get_active_game_for_host(session, callback.from_user.id)
+        if not game or game.status != GameStatus.ROUND_ACTIVE:
+            await callback.answer("Сейчас нельзя заменить лот", show_alert=True)
+            return
+
+        cats = active_categories(new_lot)
+        if not cats:
+            await callback.answer("В этом лоте нет категорий для ставок", show_alert=True)
+            return
+
+        game.current_lot_id = new_lot.id
+        game.round_started_at = datetime.now(timezone.utc)
+        await session.commit()
+        game = await get_game_by_id(session, game.id)
+
+    await state.clear()
+    await state.update_data(current_round_cats=active_categories(new_lot))
+
+    cancel_timer(callback.bot, game.id)
+
+    timer = game.timer_minutes or 5
+    host_text = format_host_card(game.current_round, game.total_rounds, new_lot.title, timer, len(game.players))
+
+    timer_msg = await callback.bot.send_message(
+        callback.message.chat.id,
+        f"⏱ <b>{timer}:00</b>",
+    )
+
+    await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
+    await callback.message.answer(f"🔄 Лот заменён на: <b>{new_lot.title}</b>")
+    await callback.message.answer(category_hint(new_lot))
+    await callback.message.answer(format_lot_cheatsheet(new_lot))
+
+    task = asyncio.create_task(
+        _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
+    )
+    register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
+
+    await callback.answer(f"Лот заменён — {new_lot.title}")
+
+
+@router.callback_query(F.data == "game:swap_cancel")
+async def cb_swap_cancel(callback: CallbackQuery):
+    async with async_session() as session:
+        game = await get_active_game_for_host(session, callback.from_user.id)
+        if not game or game.status != GameStatus.ROUND_ACTIVE:
+            await callback.message.edit_text("Раунд не активен.", reply_markup=main_menu_kb())
+            await callback.answer()
+            return
+        game = await get_game_by_id(session, game.id)
+        lot = game.current_lot
+
+    timer = game.timer_minutes or 5
+    host_text = format_host_card(game.current_round, game.total_rounds, lot.title if lot else "?", timer, len(game.players))
+    await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
+    await callback.answer()
 
 
 @router.callback_query(F.data == "game:reveal")

@@ -56,6 +56,7 @@ def round_active_host_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔍 Сделать ревел", callback_data="game:reveal"))
     builder.row(InlineKeyboardButton(text="⏹ Досрочно завершить раунд", callback_data="game:end_round_early"))
+    builder.row(InlineKeyboardButton(text="🔄 Заменить лот", callback_data="game:swap_lot"))
     return builder.as_markup()
 
 
@@ -127,5 +128,21 @@ def select_game_lots_kb(lots: list[Lot], selected_ids: Optional[set] = None) -> 
         text=f"✔️ Готово ({len(selected)} выбрано)",
         callback_data="game:sel_lots_done",
     ))
-    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="game:cancel"))
+    builder.row(
+        InlineKeyboardButton(text="🔄 Очистить", callback_data="game:sel_lots_clear"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="game:cancel"),
+    )
+    return builder.as_markup()
+
+
+def swap_lot_kb(lots: list[Lot]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for lot in lots:
+        has_cats = bool(active_categories(lot))
+        prefix = "☕ " if has_cats else "⚠️ "
+        builder.row(InlineKeyboardButton(
+            text=f"{prefix}{lot.title}",
+            callback_data=f"game:swap_to:{lot.id}",
+        ))
+    builder.row(InlineKeyboardButton(text="Отмена", callback_data="game:swap_cancel"))
     return builder.as_markup()
