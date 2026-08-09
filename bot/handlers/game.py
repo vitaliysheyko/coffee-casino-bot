@@ -38,7 +38,7 @@ from bot.states.game import GameForm
 router = Router()
 logger = logging.getLogger(__name__)
 
-MIN_PLAYERS = 2
+MIN_PLAYERS = 1
 
 
 def _host_waiting_text(game) -> str:
