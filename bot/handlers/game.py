@@ -130,6 +130,15 @@ async def cb_game_cancel_confirm(callback: CallbackQuery):
         if game:
             game.status = "finished"
             await session.commit()
+            game = await get_game_by_id(session, game.id)
+
+            for p in game.players:
+                try:
+                    await callback.bot.send_message(
+                        p.user_id, "Ведущий отменил игру."
+                    )
+                except Exception:
+                    logger.warning("Failed to send cancel notification to player %s", p.user_id, exc_info=True)
 
     await callback.message.edit_text("Игра отменена.", reply_markup=main_menu_kb())
     await callback.answer()

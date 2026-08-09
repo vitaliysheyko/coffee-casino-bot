@@ -32,12 +32,21 @@ def lot_delete_confirm_kb(lot_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def skip_cancel_kb() -> InlineKeyboardMarkup:
+def skip_cancel_kb(with_back: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if with_back:
+        builder.row(InlineKeyboardButton(text="← Назад", callback_data="lots:back"))
     builder.row(
         InlineKeyboardButton(text="Пропустить", callback_data="lots:skip"),
         InlineKeyboardButton(text="Отменить", callback_data="lots:cancel"),
     )
+    return builder.as_markup()
+
+
+def title_edit_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="Пропустить", callback_data="lots:skip"))
+    builder.row(InlineKeyboardButton(text="Отменить", callback_data="lots:cancel"))
     return builder.as_markup()
 
 

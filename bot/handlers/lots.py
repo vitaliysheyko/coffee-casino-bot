@@ -9,6 +9,7 @@ from bot.keyboards.lots import (
     lot_view_kb,
     lot_delete_confirm_kb,
     skip_cancel_kb,
+    title_edit_kb,
     lot_preview_kb,
 )
 from bot.services.lots import (
@@ -57,7 +58,8 @@ def _title_prompt() -> str:
 
 
 def _edit_title_prompt(title: str) -> str:
-    return f"Редактирование лота «{title}»\n\nВведите новое название или нажмите «Пропустить»:"
+    t = f"«{title}»" if title else ""
+    return f"Редактирование лота {t}\n\nВведите новое название или нажмите «Пропустить»:"
 
 
 async def _show_lots_list(session, callback_or_msg, user_id, *, edit: bool = True):
@@ -86,7 +88,11 @@ async def _go_to_next_field(target, state: FSMContext, lot_data: dict, next_idx:
     field_name, prompt, _ = LOT_FIELDS[next_idx]
     await state.set_state(getattr(LotForm, field_name))
 
-    kb = _title_cancel_kb() if field_name == "title" else skip_cancel_kb()
+    if field_name == "title":
+        editing = (await state.get_data()).get("editing_lot_id")
+        kb = title_edit_kb() if editing else _title_cancel_kb()
+    else:
+        kb = skip_cancel_kb(with_back=True)
 
     if _is_bot_message(target):
         await target.edit_text(prompt, reply_markup=kb)
@@ -188,7 +194,7 @@ async def cb_lot_edit(callback: CallbackQuery, state: FSMContext):
     await state.update_data(lot_data=lot_data, editing_lot_id=lot_id)
     await callback.message.edit_text(
         _edit_title_prompt(lot.title),
-        reply_markup=skip_cancel_kb(),
+        reply_markup=title_edit_kb(),
     )
     await callback.answer()
 
@@ -300,11 +306,37 @@ async def cb_lot_restart(callback: CallbackQuery, state: FSMContext):
     await state.update_data(lot_data={}, editing_lot_id=editing_lot_id)
     if editing_lot_id:
         prompt = _edit_title_prompt("")
-        kb = skip_cancel_kb()
+        kb = title_edit_kb()
     else:
         prompt = _title_prompt()
         kb = _title_cancel_kb()
     await callback.message.edit_text(prompt, reply_markup=kb)
+    await callback.answer()
+
+
+# --- Back ---
+
+@router.callback_query(F.data == "lots:back")
+async def cb_lot_back(callback: CallbackQuery, state: FSMContext):
+    current = await state.get_state()
+    if not current:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    lot_data = data.get("lot_data", {})
+
+    field_name = current.split(":")[-1]
+    if field_name not in FIELD_NAMES:
+        await callback.answer()
+        return
+
+    idx = FIELD_NAMES.index(field_name)
+    if idx <= 0:
+        await callback.answer()
+        return
+
+    await _go_to_next_field(callback.message, state, lot_data, idx - 1)
     await callback.answer()
 
 
