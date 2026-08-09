@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import settings
 from bot.constants import GameStatus
 from bot.database import async_session
-from bot.keyboards.game import game_setup_kb
+from bot.keyboards.game import game_setup_kb, select_game_lots_kb
 from bot.keyboards.common import main_menu_kb, cancel_fsm_kb
 from bot.services.games import (
     create_game,
@@ -136,14 +136,73 @@ async def process_chips_setup(message: Message, state: FSMContext):
 
     data = await state.get_data()
     config = data["game_config"]
+    config["starting_chips"] = chips
 
     async with async_session() as session:
         user = await get_or_create_user(session, message.from_user)
+        lots = await get_user_lots(session, user.id)
+
+    if not lots:
+        await message.answer(
+            "У вас нет лотов. Создайте лоты через «Мои лоты» или быструю игру.",
+            reply_markup=main_menu_kb(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(game_config=config, sel_lots={}, all_lot_ids=[l.id for l in lots])
+    await state.set_state(GameForm.setup_lots)
+    await message.answer(
+        f"☕ <b>Выберите лоты для игры</b>\n"
+        f"Раундов: {config['total_rounds']} | Фишек: {chips}\n\n"
+        f"Рекомендуется выбрать не меньше числа раундов.",
+        reply_markup=select_game_lots_kb(lots),
+    )
+
+
+@router.callback_query(GameForm.setup_lots, F.data.startswith("game:sel_lot:"))
+async def cb_sel_lot(callback: CallbackQuery, state: FSMContext):
+    lot_id = int(callback.data.split(":")[2])
+    data = await state.get_data()
+    sel = data.get("sel_lots", {})
+    key = str(lot_id)
+    sel[key] = not sel.get(key, False)
+    await state.update_data(sel_lots=sel)
+
+    selected_ids = {int(k) for k, v in sel.items() if v}
+    async with async_session() as session:
+        lots = await get_user_lots(session, callback.from_user.id)
+
+    await callback.message.edit_text(
+        f"☕ <b>Выберите лоты для игры</b>\n"
+        f"Выбрано: {len(selected_ids)}",
+        reply_markup=select_game_lots_kb(lots, selected_ids),
+    )
+    await callback.answer()
+
+
+@router.callback_query(GameForm.setup_lots, F.data == "game:sel_lots_done")
+async def cb_sel_lots_done(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    sel = data.get("sel_lots", {})
+    selected_ids = [int(k) for k, v in sel.items() if v]
+    config = data["game_config"]
+
+    if len(selected_ids) < config["total_rounds"]:
+        await callback.answer(
+            f"Нужно минимум {config['total_rounds']} лотов (выбрано {len(selected_ids)})",
+            show_alert=True,
+        )
+        return
+
+    async with async_session() as session:
+        user = await get_or_create_user(session, callback.from_user)
         game = await create_game(
             session,
             user.id,
             total_rounds=config["total_rounds"],
-            starting_chips=chips,
+            starting_chips=config["starting_chips"],
+            lot_ids=selected_ids,
         )
         game.timer_minutes = config["timer_minutes"]
         await session.commit()
@@ -151,7 +210,8 @@ async def process_chips_setup(message: Message, state: FSMContext):
 
     await state.clear()
     code = game.code
-    await message.answer(
+    await callback.message.edit_text(
         format_game_setup_prompt(code, config["timer_minutes"], config["total_rounds"], 0, settings.web_url),
         reply_markup=game_setup_kb(),
     )
+    await callback.answer(f"Создана игра {code} с {len(selected_ids)} лотами")

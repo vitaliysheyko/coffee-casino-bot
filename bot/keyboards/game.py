@@ -112,3 +112,20 @@ def leaderboard_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🎯 Следующий раунд", callback_data="game:start_round"))
     builder.row(InlineKeyboardButton(text="🏁 Завершить игру", callback_data="game:finish_game"))
     return builder.as_markup()
+
+
+def select_game_lots_kb(lots: list[Lot], selected_ids: Optional[set] = None) -> InlineKeyboardMarkup:
+    selected = selected_ids or set()
+    builder = InlineKeyboardBuilder()
+    for lot in lots:
+        prefix = "✅ " if lot.id in selected else "⬜ "
+        builder.row(InlineKeyboardButton(
+            text=f"{prefix}{lot.title}",
+            callback_data=f"game:sel_lot:{lot.id}",
+        ))
+    builder.row(InlineKeyboardButton(
+        text=f"✔️ Готово ({len(selected)} выбрано)",
+        callback_data="game:sel_lots_done",
+    ))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="game:cancel"))
+    return builder.as_markup()

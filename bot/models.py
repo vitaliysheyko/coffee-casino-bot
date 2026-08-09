@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from bot.constants import BET_CATEGORIES, CATEGORY_LABELS, GameStatus
@@ -65,6 +66,9 @@ class Game(Base):
     current_round: Mapped[int] = mapped_column(Integer, default=0)
     total_rounds: Mapped[int] = mapped_column(Integer, default=6)
     starting_chips: Mapped[int] = mapped_column(Integer, default=5)
+
+    lot_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    current_lot_index: Mapped[int] = mapped_column(Integer, default=-1)
 
     timer_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     round_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

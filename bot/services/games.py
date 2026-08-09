@@ -21,6 +21,7 @@ async def create_game(
     host_id: int,
     total_rounds: int = 6,
     starting_chips: int = 5,
+    lot_ids: Optional[list] = None,
 ) -> Game:
     while True:
         code = generate_game_code()
@@ -36,6 +37,7 @@ async def create_game(
         status=GameStatus.WAITING,
         total_rounds=total_rounds,
         starting_chips=starting_chips,
+        lot_ids=lot_ids,
     )
     session.add(game)
     await session.commit()

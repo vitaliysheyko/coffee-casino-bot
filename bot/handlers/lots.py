@@ -376,6 +376,7 @@ IMPORT_EXAMPLE = (
 
 @router.callback_query(F.data == "lots:import")
 async def cb_lots_import(callback: CallbackQuery, state: FSMContext):
+    logger.info("cb_lots_import called by user %s", callback.from_user.id)
     await state.set_state(LotForm.import_data)
     await callback.message.edit_text(IMPORT_EXAMPLE, reply_markup=back_to_main_kb())
     await callback.answer()
@@ -383,6 +384,7 @@ async def cb_lots_import(callback: CallbackQuery, state: FSMContext):
 
 @router.message(LotForm.import_data)
 async def process_import(message: Message, state: FSMContext):
+    logger.info("process_import called, has_document=%s, has_text=%s", bool(message.document), bool(message.text))
     document = message.document
 
     if document:
@@ -398,6 +400,15 @@ async def process_import(message: Message, state: FSMContext):
     async with async_session() as session:
         await get_or_create_user(session, message.from_user)
         lots_data = _parse_import(text)
+        logger.info("Parsed %d lots from import", len(lots_data) if lots_data else -1)
+        if lots_data is None:
+            await message.answer(
+                "❌ <b>JSON повреждён</b> — возможно сообщение обрезано Telegram (лимит ~8KB).\n\n"
+                "Отправьте JSON <b>файлом</b> (.json) через 📎 или разбейте на части.",
+                reply_markup=back_to_main_kb(),
+            )
+            await state.clear()
+            return
         if not lots_data:
             await message.answer(
                 "Не удалось распознать данные. Проверьте формат.",
@@ -405,6 +416,7 @@ async def process_import(message: Message, state: FSMContext):
             )
             await state.clear()
             return
+
 
         created = 0
         for data in lots_data:
@@ -423,20 +435,25 @@ async def process_import(message: Message, state: FSMContext):
 
 def _parse_import(text: str) -> list[dict]:
     text = text.strip()
-    if text.startswith("["):
+    logger.info("_parse_import called, text length=%d, starts with=%s", len(text), text[:50] if text else "")
+    if text.startswith("[") or text.startswith("{"):
         try:
             data = json.loads(text)
             if isinstance(data, list):
+                logger.info("JSON parsed: %d items", len(data))
                 return data
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.warning("JSON parse failed: %s", e)
+            return None  # signal JSON was attempted but failed
 
     try:
         reader = csv.DictReader(io.StringIO(text))
         rows = [dict(row) for row in reader]
         if rows:
+            logger.info("CSV parsed: %d rows", len(rows))
             return rows
     except Exception:
         logger.warning("Failed to parse import as CSV", exc_info=True)
 
+    logger.warning("Could not parse import data")
     return []

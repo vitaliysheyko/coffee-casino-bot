@@ -55,6 +55,34 @@ async def cb_start_round(callback: CallbackQuery, state: FSMContext):
             return
 
         cancel_timer(callback.bot, game.id)
+
+        if game.lot_ids and len(game.lot_ids) > 0:
+            next_idx = game.current_lot_index + 1
+            if next_idx >= len(game.lot_ids):
+                await callback.answer("Все лоты из меню использованы", show_alert=True)
+                return
+
+            lot_id = game.lot_ids[next_idx]
+            lot = await get_lot_by_id(session, lot_id, callback.from_user.id)
+            if not lot:
+                game.current_lot_index = next_idx
+                await session.commit()
+                await callback.answer("Лот не найден, пробую следующий", show_alert=True)
+                return await cb_start_round(callback, state)
+
+            round_num = game.current_round + 1
+            game.status = GameStatus.ROUND_ACTIVE
+            game.current_lot_id = lot.id
+            game.current_round = round_num
+            game.current_lot_index = next_idx
+            game.round_started_at = datetime.now(timezone.utc)
+            await session.commit()
+            game = await get_game_by_id(session, game.id)
+
+            await _send_round_messages(callback, game, lot)
+            await callback.answer(f"Раунд {round_num} — {lot.title}")
+            return
+
         lots = await get_user_lots(session, callback.from_user.id)
 
     if not lots:
@@ -66,6 +94,26 @@ async def cb_start_round(callback: CallbackQuery, state: FSMContext):
         reply_markup=select_lot_kb(lots),
     )
     await callback.answer()
+
+
+async def _send_round_messages(callback: CallbackQuery, game, lot):
+    timer = game.timer_minutes or 5
+    host_text = format_host_card(game.current_round, game.total_rounds, lot.title, timer, len(game.players))
+    cat_text = category_hint(lot)
+
+    timer_msg = await callback.bot.send_message(
+        callback.message.chat.id,
+        f"⏱ <b>{timer}:00</b>",
+    )
+
+    await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
+    await callback.message.answer(cat_text)
+    await callback.message.answer(format_lot_cheatsheet(lot))
+
+    task = asyncio.create_task(
+        _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
+    )
+    register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
 
 
 @router.callback_query(F.data.startswith("game:select_lot:"))
