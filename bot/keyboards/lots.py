@@ -9,6 +9,7 @@ def lots_list_kb(lots: list[Lot]) -> InlineKeyboardMarkup:
     for lot in lots:
         builder.row(InlineKeyboardButton(text=lot.title, callback_data=f"lots:view:{lot.id}"))
     builder.row(InlineKeyboardButton(text="Создать лот", callback_data="lots:create"))
+    builder.row(InlineKeyboardButton(text="Импорт CSV / JSON", callback_data="lots:import"))
     builder.row(InlineKeyboardButton(text="« В главное меню", callback_data="main_menu"))
     return builder.as_markup()
 

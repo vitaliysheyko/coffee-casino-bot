@@ -3,7 +3,12 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.constants import LOT_FIELDS
 from bot.models import Lot
+
+
+def sanitize_lot_data(data: dict) -> dict:
+    return {k: v for k, v in data.items() if k in LOT_FIELDS}
 
 
 async def get_user_lots(session: AsyncSession, user_id: int) -> list[Lot]:
@@ -21,7 +26,6 @@ async def get_lot_by_id(session: AsyncSession, lot_id: int, owner_id: int) -> Op
 
 
 async def create_lot(session: AsyncSession, owner_id: int, data: dict) -> Lot:
-    from bot.services.games import sanitize_lot_data
     clean = sanitize_lot_data(data)
     lot = Lot(owner_id=owner_id, **clean)
     session.add(lot)
@@ -31,7 +35,6 @@ async def create_lot(session: AsyncSession, owner_id: int, data: dict) -> Lot:
 
 
 async def update_lot(session: AsyncSession, lot: Lot, data: dict) -> Lot:
-    from bot.services.games import sanitize_lot_data
     for key, value in sanitize_lot_data(data).items():
         setattr(lot, key, value)
     await session.commit()
@@ -74,37 +77,6 @@ def format_lot_for_host(lot: Lot) -> str:
         lines.append(f"\n⚠️ Пустые игровые поля: {', '.join(empty)}")
     
     return "\n".join(lines)
-
-
-def format_lot_for_players(lot: Lot) -> str:
-    lines = [f"<b>{lot.title}</b>", ""]
-    
-    fields = [
-        ("Страна", lot.country),
-        ("Регион", lot.region),
-        ("Высота", lot.altitude),
-        ("Обработка", lot.process),
-        ("Разновидность", lot.variety),
-        ("Оценка", lot.score),
-    ]
-    
-    for name, value in fields:
-        if value:
-            lines.append(f"{name}: {value}")
-    
-    return "\n".join(lines)
-
-
-def get_empty_game_fields(lot: Lot) -> list[str]:
-    mapping = {
-        "Страна": lot.country,
-        "Регион": lot.region,
-        "Высота": lot.altitude,
-        "Обработка": lot.process,
-        "Разновидность": lot.variety,
-        "Оценка": lot.score,
-    }
-    return [name for name, value in mapping.items() if not value]
 
 
 PRESET_LOTS = [
@@ -192,6 +164,10 @@ PRESET_LOTS = [
 async def create_preset_lots(session: AsyncSession, owner_id: int) -> list[Lot]:
     lots = []
     for data in PRESET_LOTS:
-        lot = await create_lot(session, owner_id, data)
+        lot = Lot(owner_id=owner_id, **sanitize_lot_data(data))
+        session.add(lot)
         lots.append(lot)
+    await session.commit()
+    for lot in lots:
+        await session.refresh(lot)
     return lots

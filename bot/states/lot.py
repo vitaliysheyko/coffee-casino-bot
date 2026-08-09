@@ -14,3 +14,4 @@ class LotForm(StatesGroup):
     fact = State()
     notes = State()
     preview = State()
+    import_data = State()

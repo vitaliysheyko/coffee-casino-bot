@@ -1,0 +1,24 @@
+[project]
+name = "coffee-casino-bot"
+version = "2.0.0"
+description = "Coffee Casino Telegram Bot - Host Assistant"
+requires-python = ">=3.9"
+dependencies = [
+    "aiogram>=3.15",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.19",
+    "pydantic-settings>=2.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+exclude = [".git", "__pycache__", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

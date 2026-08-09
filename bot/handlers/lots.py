@@ -1,8 +1,14 @@
+import csv
+import io
+import json
+import logging
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.constants import LOT_FIELDS, LOT_FIELD_NAMES
 from bot.database import async_session
 from bot.keyboards.lots import (
     lots_list_kb,
@@ -12,6 +18,7 @@ from bot.keyboards.lots import (
     title_edit_kb,
     lot_preview_kb,
 )
+from bot.keyboards.common import back_to_main_kb
 from bot.services.lots import (
     get_user_lots,
     get_lot_by_id,
@@ -19,13 +26,15 @@ from bot.services.lots import (
     update_lot,
     delete_lot,
     format_lot_for_host,
+    sanitize_lot_data,
 )
 from bot.services.games import get_or_create_user
 from bot.states.lot import LotForm
 
 router = Router()
+logger = logging.getLogger(__name__)
 
-LOT_FIELDS = [
+LOT_FIELDS_META = [
     ("title", "Введите название лота:", True),
     ("country", "Страна (или нажмите «Пропустить»):", False),
     ("region", "Регион / Станция:", False),
@@ -40,7 +49,7 @@ LOT_FIELDS = [
 ]
 
 DASH = "\u2014"
-FIELD_NAMES = [f[0] for f in LOT_FIELDS]
+FIELD_NAMES = [f[0] for f in LOT_FIELDS_META]
 
 
 def _is_bot_message(msg) -> bool:
@@ -76,7 +85,7 @@ async def _show_lots_list(session, callback_or_msg, user_id, *, edit: bool = Tru
 
 
 async def _go_to_next_field(target, state: FSMContext, lot_data: dict, next_idx: int):
-    if next_idx >= len(LOT_FIELDS):
+    if next_idx >= len(LOT_FIELDS_META):
         await state.set_state(LotForm.preview)
         text = _build_preview(lot_data)
         if _is_bot_message(target):
@@ -85,7 +94,7 @@ async def _go_to_next_field(target, state: FSMContext, lot_data: dict, next_idx:
             await target.answer(text, reply_markup=lot_preview_kb())
         return
 
-    field_name, prompt, _ = LOT_FIELDS[next_idx]
+    field_name, prompt, _ = LOT_FIELDS_META[next_idx]
     await state.set_state(getattr(LotForm, field_name))
 
     if field_name == "title":
@@ -102,24 +111,11 @@ async def _go_to_next_field(target, state: FSMContext, lot_data: dict, next_idx:
 
 def _build_preview(data: dict) -> str:
     lines = ["<b>Превью лота:</b>", ""]
-    labels = {
-        "title": "Название",
-        "country": "Страна",
-        "region": "Регион",
-        "altitude": "Высота",
-        "process": "Обработка",
-        "variety": "Разновидность",
-        "score": "Оценка",
-        "roast_level": "Обжарка",
-        "roast_date": "Дата обжарки",
-        "fact": "Факт",
-        "notes": "Заметки",
-    }
-    for key, label in labels.items():
+    for key, label in LOT_FIELD_NAMES.items():
         val = data.get(key)
         lines.append(f"{label}: {val or DASH}")
 
-    empty = [labels[k] for k in ["country", "region", "altitude", "process", "variety", "score"] if not data.get(k)]
+    empty = [LOT_FIELD_NAMES[k] for k in ["country", "region", "altitude", "process", "variety", "score"] if not data.get(k)]
     if empty:
         lines.append(f"\n⚠️ Пустые игровые поля: {', '.join(empty)}")
     return "\n".join(lines)
@@ -361,3 +357,86 @@ async def cb_lot_delete_confirm(callback: CallbackQuery):
             await delete_lot(session, lot)
         await _show_lots_list(session, callback.message, callback.from_user.id)
     await callback.answer()
+
+
+# --- Import ---
+
+IMPORT_EXAMPLE = (
+    "<b>Импорт лотов</b>\n\n"
+    "Отправьте CSV (заголовки: title,country,region,altitude,process,variety,score,roast_level,roast_date,fact,notes)\n\n"
+    "Или JSON: список объектов с теми же полями.\n\n"
+    "Пример CSV:\n"
+    "<code>title,country,region,process\n"
+    "Эфиопия Гуджи,Эфиопия,Гуджи,мытая\n"
+    "Колумбия Уила,Колумбия,Уила,мытая</code>\n\n"
+    "Пример JSON:\n"
+    '<code>[{"title":"Эфиопия","country":"Эфиопия"}]</code>'
+)
+
+
+@router.callback_query(F.data == "lots:import")
+async def cb_lots_import(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(LotForm.import_data)
+    await callback.message.edit_text(IMPORT_EXAMPLE, reply_markup=back_to_main_kb())
+    await callback.answer()
+
+
+@router.message(LotForm.import_data)
+async def process_import(message: Message, state: FSMContext):
+    document = message.document
+
+    if document:
+        file = await message.bot.get_file(document.file_id)
+        content = await message.bot.download_file(file.file_path)
+        text = content.read().decode("utf-8-sig")
+    elif message.text:
+        text = message.text
+    else:
+        await message.answer("Отправьте CSV/JSON файл или вставьте текст.")
+        return
+
+    async with async_session() as session:
+        await get_or_create_user(session, message.from_user)
+        lots_data = _parse_import(text)
+        if not lots_data:
+            await message.answer(
+                "Не удалось распознать данные. Проверьте формат.",
+                reply_markup=back_to_main_kb(),
+            )
+            await state.clear()
+            return
+
+        created = 0
+        for data in lots_data:
+            clean = sanitize_lot_data(data)
+            if not clean.get("title"):
+                continue
+            await create_lot(session, message.from_user.id, clean)
+            created += 1
+
+    await state.clear()
+    await message.answer(
+        f"Импортировано лотов: {created}",
+        reply_markup=back_to_main_kb(),
+    )
+
+
+def _parse_import(text: str) -> list[dict]:
+    text = text.strip()
+    if text.startswith("["):
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+    try:
+        reader = csv.DictReader(io.StringIO(text))
+        rows = [dict(row) for row in reader]
+        if rows:
+            return rows
+    except Exception:
+        logger.warning("Failed to parse import as CSV", exc_info=True)
+
+    return []

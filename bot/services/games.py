@@ -1,7 +1,3 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
 import random
 import string
 from typing import Optional
@@ -10,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from bot.constants import GameStatus
 from bot.models import Game, GamePlayer, User
-
-GAME_FIELDS = {"title", "country", "region", "altitude", "process", "variety", "score", "roast_level", "roast_date", "fact", "notes"}
+from sqlalchemy import select
 
 
 def generate_game_code(length: int = 4) -> str:
@@ -20,14 +16,27 @@ def generate_game_code(length: int = 4) -> str:
     return "".join(random.choices(chars, k=length))
 
 
-async def create_game(session: AsyncSession, host_id: int) -> Game:
+async def create_game(
+    session: AsyncSession,
+    host_id: int,
+    total_rounds: int = 6,
+    starting_chips: int = 5,
+) -> Game:
     while True:
         code = generate_game_code()
-        exists = await session.execute(select(Game).where(Game.code == code, Game.status != "finished"))
+        exists = await session.execute(
+            select(Game).where(Game.code == code, Game.status != GameStatus.FINISHED)
+        )
         if not exists.scalar_one_or_none():
             break
 
-    game = Game(code=code, host_id=host_id, status="waiting")
+    game = Game(
+        code=code,
+        host_id=host_id,
+        status=GameStatus.WAITING,
+        total_rounds=total_rounds,
+        starting_chips=starting_chips,
+    )
     session.add(game)
     await session.commit()
     await session.refresh(game)
@@ -37,8 +46,11 @@ async def create_game(session: AsyncSession, host_id: int) -> Game:
 async def get_game_by_code(session: AsyncSession, code: str) -> Optional[Game]:
     result = await session.execute(
         select(Game)
-        .where(Game.code == code.upper(), Game.status != "finished")
-        .options(selectinload(Game.players).selectinload(GamePlayer.user))
+        .where(Game.code == code.upper(), Game.status != GameStatus.FINISHED)
+        .options(
+            selectinload(Game.players).selectinload(GamePlayer.user),
+            selectinload(Game.current_lot),
+        )
     )
     return result.scalar_one_or_none()
 
@@ -58,21 +70,37 @@ async def get_game_by_id(session: AsyncSession, game_id: int) -> Optional[Game]:
 async def get_active_game_for_host(session: AsyncSession, host_id: int) -> Optional[Game]:
     result = await session.execute(
         select(Game)
-        .where(Game.host_id == host_id, Game.status != "finished")
-        .options(selectinload(Game.players).selectinload(GamePlayer.user))
+        .where(Game.host_id == host_id, Game.status != GameStatus.FINISHED)
+        .options(
+            selectinload(Game.players).selectinload(GamePlayer.user),
+            selectinload(Game.current_lot),
+        )
     )
     return result.scalar_one_or_none()
 
 
-async def add_player_to_game(session: AsyncSession, game: Game, user: User) -> GamePlayer:
+async def add_player_to_game(
+    session: AsyncSession,
+    game: Game,
+    user: User,
+    display_name: Optional[str] = None,
+) -> GamePlayer:
     result = await session.execute(
-        select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
+        select(GamePlayer).where(
+            GamePlayer.game_id == game.id, GamePlayer.user_id == user.id
+        )
     )
     existing = result.scalar_one_or_none()
     if existing:
         return existing
 
-    player = GamePlayer(game_id=game.id, user_id=user.id)
+    name = display_name or user.full_name or f"Игрок {user.id}"
+    player = GamePlayer(
+        game_id=game.id,
+        user_id=user.id,
+        display_name=name,
+        total_score=game.starting_chips,
+    )
     session.add(player)
     await session.commit()
     await session.refresh(player)
@@ -105,17 +133,25 @@ async def get_or_create_user(session: AsyncSession, tg_user) -> User:
     return user
 
 
-def format_players_list(game: Game) -> str:
-    if not game.players:
+def format_players_list(players: list[GamePlayer]) -> str:
+    if not players:
         return "Пока никого нет"
-
     lines = []
-    for p in game.players:
-        name = p.user.full_name if p.user else "Игрок"
-        mark = " ✓" if p.has_bet else ""
-        lines.append(f"• {name}{mark}")
+    for p in players:
+        name = p.display_name
+        lines.append(f"• {name} ({p.total_score} фишек)")
     return "\n".join(lines)
 
 
-def sanitize_lot_data(data: dict) -> dict:
-    return {k: v for k, v in data.items() if k in GAME_FIELDS}
+async def get_finished_games_for_host(session: AsyncSession, host_id: int, limit: int = 10) -> list[Game]:
+    result = await session.execute(
+        select(Game)
+        .where(Game.host_id == host_id, Game.status == GameStatus.FINISHED)
+        .order_by(Game.finished_at.desc())
+        .limit(limit)
+        .options(
+            selectinload(Game.players),
+            selectinload(Game.round_results),
+        )
+    )
+    return list(result.scalars().all())
