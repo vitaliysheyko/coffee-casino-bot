@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime, timezone
 
 from aiogram import F, Router
@@ -39,6 +41,14 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 MIN_PLAYERS = 1
+
+_active_timers: dict[int, asyncio.Task] = {}
+
+
+def _cancel_timer(game_id: int):
+    task = _active_timers.pop(game_id, None)
+    if task and not task.done():
+        task.cancel()
 
 
 def _host_waiting_text(game) -> str:
@@ -139,9 +149,12 @@ async def cb_game_cancel_confirm(callback: CallbackQuery):
     async with async_session() as session:
         game = await get_active_game_for_host(session, callback.from_user.id)
         if game:
+            game_id = game.id
             game.status = "finished"
             await session.commit()
             game = await get_game_by_id(session, game.id)
+
+            _cancel_timer(game_id)
 
             for p in game.players:
                 try:
@@ -262,6 +275,45 @@ async def cb_confirm_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+async def _run_timer(bot, chat_id: int, message_id: int, host_id: int, game_id: int, lot_number: int, lot_title: str, total_minutes: int):
+    try:
+        while True:
+            await asyncio.sleep(15)
+
+            async with async_session() as session:
+                game = await get_game_by_id(session, game_id)
+                if not game or game.status != "round_active":
+                    break
+
+                elapsed = (datetime.now(timezone.utc) - game.round_started_at).total_seconds()
+                remaining = max(0, total_minutes * 60 - elapsed)
+                minutes_left = int(remaining // 60)
+                seconds_left = int(remaining % 60)
+
+                bet_count = sum(1 for p in game.players if p.has_bet)
+                total_players = len(game.players)
+
+            text = (
+                f"Раунд идёт\n\n"
+                f"<b>Лот {lot_number} — {lot_title}</b>\n"
+                f"⏱ Таймер: {minutes_left}:{seconds_left:02d}\n\n"
+                f"Уже поставили: {bet_count} из {total_players}"
+            )
+
+            if remaining <= 0:
+                text += "\n\n⚠️ Время вышло!"
+
+            try:
+                await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=round_active_host_kb())
+            except Exception:
+                logger.warning("Failed to update timer message", exc_info=True)
+
+            if remaining <= 0:
+                break
+    except asyncio.CancelledError:
+        pass
+
+
 async def _launch_round(
     message_or_msg, state: FSMContext, user_id: int, lot_id: int, edit: bool = False
 ):
@@ -280,12 +332,12 @@ async def _launch_round(
             await message_or_msg.answer("Лот не найден.")
             return
 
+        minutes = game.timer_minutes or 5
         lot_number = (game.current_lot_number or 0) + 1
 
         game.status = "round_active"
         game.current_lot_id = lot.id
         game.current_lot_number = lot_number
-        game.timer_minutes = minutes
         game.round_started_at = datetime.now(timezone.utc)
 
         game = await get_game_by_id(session, game.id)
@@ -306,9 +358,9 @@ async def _launch_round(
     )
 
     if edit:
-        await message_or_msg.edit_text(host_text, reply_markup=round_active_host_kb())
+        sent = await message_or_msg.edit_text(host_text, reply_markup=round_active_host_kb())
     else:
-        await message_or_msg.answer(host_text, reply_markup=round_active_host_kb())
+        sent = await message_or_msg.answer(host_text, reply_markup=round_active_host_kb())
 
     player_text = (
         f"Раунд начался!\n\n"
@@ -321,6 +373,12 @@ async def _launch_round(
             await bot.send_message(p.user_id, player_text, reply_markup=player_bet_kb())
         except Exception:
             logger.warning("Failed to send round start to player %s", p.user_id, exc_info=True)
+
+    if game.id in _active_timers:
+        _active_timers[game.id].cancel()
+    _active_timers[game.id] = asyncio.create_task(
+        _run_timer(bot, sent.chat.id, sent.message_id, user_id, game.id, lot_number, lot.title, minutes)
+    )
 
 
 def _round_active_text(game) -> str:
@@ -449,6 +507,8 @@ async def cb_reveal(callback: CallbackQuery):
         await session.commit()
         game = await get_game_by_id(session, game.id)
 
+    _cancel_timer(game.id)
+
     host_text = (
         f"Ревейл — Лот {game.current_lot_number}\n\n"
         f"{format_lot_for_host(lot) if lot else 'Лот не найден'}"
@@ -495,9 +555,12 @@ async def cb_finish_confirm(callback: CallbackQuery):
     async with async_session() as session:
         game = await get_active_game_for_host(session, callback.from_user.id)
         if game:
+            game_id = game.id
             game.status = "finished"
             await session.commit()
             game = await get_game_by_id(session, game.id)
+
+            _cancel_timer(game_id)
 
             for p in game.players:
                 try:
