@@ -41,6 +41,9 @@ async def delete_lot(session: AsyncSession, lot: Lot) -> None:
     await session.commit()
 
 
+_EM_DASH = "\u2014"
+
+
 def format_lot_for_host(lot: Lot) -> str:
     lines = [f"<b>{lot.title}</b>", ""]
     
@@ -56,7 +59,7 @@ def format_lot_for_host(lot: Lot) -> str:
     ]
     
     for name, value in fields:
-        lines.append(f"{name}: {value or '—'}")
+        lines.append(f"{name}: {value or _EM_DASH}")
     
     if lot.fact:
         lines.append(f"\n📌 Факт: {lot.fact}")
