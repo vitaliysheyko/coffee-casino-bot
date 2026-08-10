@@ -24,6 +24,7 @@ def game_waiting_kb(can_start: bool) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="➕ Добавить игрока", callback_data="game:add_player"))
     builder.row(InlineKeyboardButton(text="➖ Убрать игрока", callback_data="game:remove_player"))
     builder.row(InlineKeyboardButton(text="🧮 Калькулятор", callback_data="game:calculator"))
+    builder.row(InlineKeyboardButton(text="⚙️ Множители", callback_data="game:settings"))
     if can_start:
         builder.row(InlineKeyboardButton(text="🎯 Начать раунд", callback_data="game:start_round"))
     builder.row(InlineKeyboardButton(text="❌ Отменить игру", callback_data="game:cancel"))
