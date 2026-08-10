@@ -51,8 +51,8 @@ def _add_value_row(
     plus_cb: str,
 ):
     builder.row(
-        InlineKeyboardButton(text=f"{label}: {value}", callback_data="sett:nop"),
         InlineKeyboardButton(text="−", callback_data=minus_cb),
+        InlineKeyboardButton(text=f"{label}: {value}", callback_data="sett:nop"),
         InlineKeyboardButton(text="+", callback_data=plus_cb),
     )
 
