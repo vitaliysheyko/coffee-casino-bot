@@ -33,6 +33,7 @@ def _player_calc_kb(player_id: int, modifier_on: bool, has_bets: bool, prev_id: 
 
     if has_bets:
         b.button(text="↩ Отменить", callback_data=f"calc:undo:{player_id}")
+        b.button(text="💾 Сохранить", callback_data=f"calc:save:{player_id}")
 
     nav = []
     if prev_id:
@@ -46,7 +47,15 @@ def _player_calc_kb(player_id: int, modifier_on: bool, has_bets: bool, prev_id: 
     return b.as_markup()
 
 
-def _format_bets(bets: list) -> str:
+def _round_total(bets: list, mod: bool) -> int:
+    won = sum(b["amount"] * b["mult"] for b in bets if b["mult"])
+    lost = sum(b["amount"] for b in bets if not b["mult"])
+    if mod:
+        won *= 2
+    return won - lost
+
+
+def _format_bets(bets: list, mod: bool) -> str:
     if not bets:
         return "—"
     lines = []
@@ -56,13 +65,10 @@ def _format_bets(bets: list) -> str:
         if m == 0:
             lines.append(f"{i}. {amt}♟ ❌ = −{amt}")
         else:
-            lines.append(f"{i}. {amt}♟ ×{m} = +{amt * m}")
+            bonus = amt * m
+            mod_text = f" ×2🧪" if mod else ""
+            lines.append(f"{i}. {amt}♟ ×{m}{mod_text} = +{bonus * (2 if mod else 1)}")
     return "\n".join(lines)
-
-
-def _round_total(bets: list, mod: bool) -> int:
-    t = sum(b["amount"] * b["mult"] if b["mult"] else -b["amount"] for b in bets)
-    return t * 2 if mod else t
 
 
 async def _get_calc_state(state: FSMContext):
@@ -128,11 +134,20 @@ async def _render(callback: CallbackQuery, state: FSMContext):
     next_id = ids[idx + 1] if idx < len(ids) - 1 else 0
 
     rt = _round_total(bets, mod)
+    won = sum(b["amount"] * b["mult"] for b in bets if b["mult"])
+    lost = sum(b["amount"] for b in bets if not b["mult"])
+
+    won_display = f"+{won}♟"
+    if mod and won > 0:
+        won_display = f"+{won}♟ ×2🧪 = +{won * 2}♟"
+
     text = (
         f"🧮 <b>{player.display_name}</b>\n"
         f"Баланс: {player.total_score}♟\n\n"
-        f"<b>Раунд:</b>\n{_format_bets(bets)}\n\n"
-        f"Итого раунд: <b>{rt:+d}♟</b>\n"
+        f"<b>Раунд:</b>\n{_format_bets(bets, mod)}\n\n"
+        f"Выигрыш: {won_display}\n"
+        f"Проигрыш: −{lost}♟\n\n"
+        f"<b>Итого раунд: {rt:+d}♟</b>\n"
         f"После раунда: <b>{player.total_score + rt}♟</b>"
     )
     await callback.message.edit_text(text, reply_markup=_player_calc_kb(player_id, mod, len(bets) > 0, prev_id, next_id))
@@ -199,3 +214,37 @@ async def cb_calc_undo(callback: CallbackQuery, state: FSMContext):
         await state.update_data(calc_bets=bets)
     await _render(callback, state)
     await callback.answer("Отменено")
+
+
+@router.callback_query(F.data.startswith("calc:save:"))
+async def cb_calc_save(callback: CallbackQuery, state: FSMContext):
+    d = await state.get_data()
+    player_id = d.get("calc_player_id")
+    bets = d.get("calc_bets", [])
+    mod = d.get("calc_mod", False)
+
+    if not bets:
+        await callback.answer("Нет ставок для сохранения", show_alert=True)
+        return
+
+    rt = _round_total(bets, mod)
+
+    async with async_session() as session:
+        game = await get_active_game_for_host(session, callback.from_user.id)
+        if not game:
+            await callback.answer("Нет игры", show_alert=True)
+            return
+        game = await get_game_by_id(session, game.id)
+        player = next((p for p in game.players if p.id == player_id), None)
+        if not player:
+            await callback.answer("Игрок не найден", show_alert=True)
+            return
+
+        player.total_score += rt
+        await session.commit()
+        name = player.display_name
+        new_balance = player.total_score
+
+    await state.update_data(calc_bets=[], calc_mod=False)
+    await _render(callback, state)
+    await callback.answer(f"{name}: {rt:+d}♟ → {new_balance}♟")
