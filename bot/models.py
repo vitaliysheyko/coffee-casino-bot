@@ -19,6 +19,7 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     full_name: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    quick_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
 
     lots: Mapped[list["Lot"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     games_as_host: Mapped[list["Game"]] = relationship(back_populates="host")

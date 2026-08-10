@@ -16,6 +16,8 @@ from bot.services.games import (
 from bot.services.lots import create_preset_lots, get_user_lots
 from bot.services.script import format_game_setup_prompt
 from bot.states.game import GameForm
+from sqlalchemy import select
+from bot.models import User
 
 router = Router()
 
@@ -82,23 +84,6 @@ async def cb_help(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "help")
-async def cb_help(callback: CallbackQuery):
-    text = (
-        "<b>Как играть</b>\n\n"
-        "1. Создайте лоты заранее (импорт CSV/JSON или пресеты)\n"
-        "2. Создайте игру: задайте число раундов, таймер, фишки\n"
-        "3. Добавьте игроков (имена за столом)\n"
-        "4. Выберите лот — бот запустит таймер\n"
-        "5. Игроки пробуют кофе и делают ставки на физическом поле\n"
-        "6. После ревела отметьте кто угадал — бот посчитает фишки\n"
-        "7. Турнирная таблица обновляется автоматически\n\n"
-        "Игроки не взаимодействуют с ботом. Всё делает ведущий."
-    )
-    await callback.message.edit_text(text, reply_markup=main_menu_kb())
-    await callback.answer()
-
-
 @router.callback_query(F.data == "quick_game")
 async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
     async with async_session() as session:
@@ -115,10 +100,14 @@ async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
         lots = await get_user_lots(session, user.id)
         if len(lots) < 4:
             lots = await create_preset_lots(session, user.id)
+
+        result = await session.execute(select(User).where(User.id == user.id))
+        db_user = result.scalar_one_or_none()
+        qcfg = db_user.quick_config if db_user and db_user.quick_config else {"rounds": 6, "timer": 3, "chips": 10}
         
         lot_ids = [l.id for l in lots]
-        game = await create_game(session, user.id, total_rounds=6, starting_chips=10, lot_ids=lot_ids)
-        game.timer_minutes = 3
+        game = await create_game(session, user.id, total_rounds=qcfg["rounds"], starting_chips=qcfg["chips"], lot_ids=lot_ids)
+        game.timer_minutes = qcfg["timer"]
         await session.commit()
         game = await get_game_by_id(session, game.id)
 
@@ -126,7 +115,7 @@ async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
 
     lot_titles = [l.title for l in lots]
     await callback.message.edit_text(
-        format_game_setup_prompt(game.code, 3, 6, 0, settings.web_url, lot_titles),
+        format_game_setup_prompt(game.code, qcfg["timer"], qcfg["rounds"], 0, settings.web_url, lot_titles),
         reply_markup=game_setup_kb(),
     )
     await callback.answer()
