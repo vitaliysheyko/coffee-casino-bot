@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
+
 from bot.constants import GameStatus
 from bot.database import async_session
 from bot.services.games import get_game_by_id
@@ -25,8 +27,8 @@ async def _delete_timer_message(bot, chat_id, message_id):
     if chat_id and message_id:
         try:
             await bot.delete_message(chat_id, message_id)
-        except Exception:
-            logger.warning("Failed to delete timer message", exc_info=True)
+        except (TelegramAPIError, TelegramNetworkError) as e:
+            logger.warning("Failed to delete timer message: %s", e)
 
 
 async def _run_timer(bot, chat_id: int, message_id: int, game_id: int, total_seconds: int):
@@ -46,15 +48,15 @@ async def _run_timer(bot, chat_id: int, message_id: int, game_id: int, total_sec
 
             try:
                 await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id)
-            except Exception:
-                logger.warning("Timer update failed", exc_info=True)
+            except (TelegramAPIError, TelegramNetworkError) as e:
+                logger.warning("Timer update failed: %s", e)
 
         try:
             await bot.edit_message_text("⏰ <b>Время вышло!</b>", chat_id=chat_id, message_id=message_id)
             await asyncio.sleep(3)
             await bot.delete_message(chat_id, message_id)
-        except Exception:
-            logger.warning("Timer cleanup failed", exc_info=True)
+        except (TelegramAPIError, TelegramNetworkError) as e:
+            logger.warning("Timer cleanup failed: %s", e)
             return
 
         async with async_session() as session:
@@ -64,18 +66,18 @@ async def _run_timer(bot, chat_id: int, message_id: int, game_id: int, total_sec
                 await session.commit()
 
         try:
-            lot = game.current_lot
+            lot = game.current_lot if game else None
             await bot.send_message(
                 chat_id,
                 f"⏰ <b>Время вышло!</b>\n\n"
                 f"Ставки сделаны, пора ревелить лот «{lot.title if lot else '?'}».\n\n"
                 f"Используйте кнопку «Отметить кто угадал» на панели ниже.",
             )
-        except Exception:
-            logger.warning("Auto-reveal notification failed", exc_info=True)
+        except (TelegramAPIError, TelegramNetworkError) as e:
+            logger.warning("Auto-reveal notification failed: %s", e)
 
     except asyncio.CancelledError:
-        pass
+        raise
 
 
 def register_timer(game_id: int, task: asyncio.Task, chat_id: int, message_id: int):

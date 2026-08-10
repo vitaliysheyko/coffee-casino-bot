@@ -1,4 +1,9 @@
-from bot.constants import BET_CATEGORIES, CATEGORY_LABELS
+from __future__ import annotations
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bot.constants import BET_CATEGORIES, CATEGORY_LABELS, MODIFIER_LABELS, MODIFIER_TYPES
 from bot.models import Game, GamePlayer, Lot, RoundResult
 
 
@@ -10,10 +15,14 @@ def calculate_round_score(
     results: dict[str, bool],
     active_cats: list[str],
     bet_per_category: int = 1,
+    modifier_applied: bool = False,
+    modifier_multiplier: int = 2,
 ) -> tuple[int, int, int]:
     correct = sum(1 for cat in active_cats if results.get(cat, False))
     wrong = len(active_cats) - correct
     won = correct * bet_per_category * 2
+    if modifier_applied and won > 0:
+        won *= modifier_multiplier
     lost = wrong * bet_per_category
     return correct, won - lost, lost
 
@@ -23,10 +32,19 @@ def apply_round_result(
     lot: Lot,
     round_number: int,
     category_results: dict[str, bool],
+    modifier_type: Optional[str] = None,
+    modifier_multiplier: int = 2,
     bet_per_category: int = 1,
 ) -> RoundResult:
     cats = active_categories(lot)
-    correct_count, score_delta, chips_lost = calculate_round_score(category_results, cats, bet_per_category)
+    modifier_applied = modifier_type in MODIFIER_TYPES
+    correct_count, score_delta, chips_lost = calculate_round_score(
+        category_results,
+        cats,
+        bet_per_category,
+        modifier_applied,
+        modifier_multiplier,
+    )
 
     result = RoundResult(
         game_id=player.game_id,
@@ -38,11 +56,30 @@ def apply_round_result(
         process_correct=category_results.get("process", False),
         variety_correct=category_results.get("variety", False),
         roast_level_correct=category_results.get("roast_level", False),
+        modifier_type=modifier_type,
+        modifier_applied=modifier_applied,
         chips_won=score_delta,
     )
 
     player.total_score += score_delta
     return result
+
+
+async def count_modifier_usage(
+    session: AsyncSession,
+    game_id: int,
+    player_id: int,
+    modifier_type: str,
+) -> int:
+    result = await session.execute(
+        select(func.count(RoundResult.id)).where(
+            RoundResult.game_id == game_id,
+            RoundResult.player_id == player_id,
+            RoundResult.modifier_type == modifier_type,
+            RoundResult.modifier_applied == True,
+        )
+    )
+    return result.scalar_one() or 0
 
 
 def build_leaderboard(players: list[GamePlayer]) -> list[dict]:
@@ -82,9 +119,12 @@ def format_round_summary(round_number: int, lot: Lot, results: list[RoundResult]
         for r in results:
             player = r.player
             correct_cats = [cat_labels[c] for c in cats if getattr(r, f"{c}_correct", False)]
+            mod_text = ""
+            if r.modifier_applied and r.modifier_type:
+                mod_text = f" [{MODIFIER_LABELS.get(r.modifier_type, r.modifier_type)}]"
             if correct_cats:
                 sign = "+" if r.chips_won >= 0 else ""
-                lines.append(f"  {player.display_name}: {sign}{r.chips_won} ({' + '.join(correct_cats)})")
+                lines.append(f"  {player.display_name}: {sign}{r.chips_won}{mod_text} ({' + '.join(correct_cats)})")
             else:
-                lines.append(f"  {player.display_name}: {r.chips_won} (не угадал ни одной категории)")
+                lines.append(f"  {player.display_name}: {r.chips_won}{mod_text} (не угадал ни одной категории)")
     return "\n".join(lines)

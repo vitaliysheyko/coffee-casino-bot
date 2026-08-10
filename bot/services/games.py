@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import string
 from typing import Optional
@@ -8,7 +10,6 @@ from sqlalchemy.orm import selectinload
 
 from bot.constants import GameStatus
 from bot.models import Game, GamePlayer, User
-from sqlalchemy import select
 
 
 def generate_game_code(length: int = 4) -> str:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from aiogram.fsm.state import State, StatesGroup
 
 
@@ -8,4 +10,5 @@ class GameForm(StatesGroup):
     setup_lots = State()
     add_player = State()
     scoring = State()
+    scoring_modifier = State()
     add_extra_round = State()

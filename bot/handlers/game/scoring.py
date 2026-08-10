@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.constants import GameStatus
+from bot.constants import GameStatus, MODIFIER_LABELS, MODIFIER_TYPES
 from bot.database import async_session
 from bot.keyboards.game import (
+    build_modifier_kb,
     build_round_result_kb,
     reveal_kb,
 )
@@ -16,6 +19,7 @@ from bot.services.lots import get_lot_by_id, format_lot_for_host
 from bot.services.scoring import (
     active_categories,
     apply_round_result,
+    count_modifier_usage,
     format_round_summary,
 )
 from bot.states.game import GameForm
@@ -36,6 +40,7 @@ async def cb_score_round(callback: CallbackQuery, state: FSMContext):
         game = await get_game_by_id(session, game.id)
         players = list(game.players)
         lot = game.current_lot
+        host = game.host
 
     if not lot:
         await callback.answer("Лот не найден", show_alert=True)
@@ -46,6 +51,12 @@ async def cb_score_round(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Нет категорий для ставок", show_alert=True)
         return
 
+    enabled_mods = []
+    if host:
+        for mod_type in MODIFIER_TYPES:
+            if getattr(host, f"mod_{mod_type}_enabled", False):
+                enabled_mods.append(mod_type)
+
     player_data = {p.id: p.display_name for p in players}
     await state.update_data(
         scoring_round=game.current_round,
@@ -54,7 +65,10 @@ async def cb_score_round(callback: CallbackQuery, state: FSMContext):
         scoring_cats=cats,
         scoring_idx=0,
         scoring_results={},
+        scoring_modifiers={},
         scoring_host_id=callback.from_user.id,
+        scoring_modifiers_enabled=enabled_mods,
+        modifier_multiplier=host.modifier_multiplier if host else 2,
     )
     await state.set_state(GameForm.scoring)
     logger.info("FSM state set to GameForm.scoring, players: %s", list(player_data.keys()))
@@ -129,8 +143,86 @@ async def cb_scoring_done(callback: CallbackQuery, state: FSMContext):
     player_id = int(player_id_str)
 
     data = await state.get_data()
+    enabled_mods = data.get("scoring_modifiers_enabled", [])
+
+    if enabled_mods:
+        await state.set_state(GameForm.scoring_modifier)
+        await _show_modifier_for_player(callback.message, state, player_id)
+    else:
+        idx = data["scoring_idx"] + 1
+        await state.update_data(scoring_idx=idx)
+
+        cats = data["scoring_cats"]
+        player_data = data["scoring_players"]
+        await _show_scoring_for_player(callback.message, state, idx, cats, player_data)
+
+    await callback.answer()
+
+
+async def _show_modifier_for_player(target: Message, state: FSMContext, player_id: int):
+    data = await state.get_data()
+    player_data = data["scoring_players"]
+    player_name = player_data.get(player_id, "Игрок")
+    current_modifier = data.get("scoring_modifiers", {}).get(str(player_id))
+
+    game_id = None
+    async with async_session() as session:
+        game = await get_active_game_for_host(session, data["scoring_host_id"])
+        if game:
+            game_id = game.id
+
+    usage_counts = {}
+    if game_id:
+        async with async_session() as session:
+            for mod_type in MODIFIER_TYPES:
+                usage_counts[mod_type] = await count_modifier_usage(session, game_id, player_id, mod_type)
+
+    host_id = data["scoring_host_id"]
+    user = None
+    async with async_session() as session:
+        from bot.models import User
+        from sqlalchemy import select
+        result = await session.execute(select(User).where(User.id == host_id))
+        user = result.scalar_one_or_none()
+
+    await target.edit_text(
+        f"🧪 <b>Модификатор</b>\n\nИгрок: <b>{player_name}</b>\nВыберите модификатор (лимит 2 раза за игру):",
+        reply_markup=build_modifier_kb(player_id, user, usage_counts, current_modifier),
+    )
+
+
+@router.callback_query(GameForm.scoring_modifier, F.data == "scoring:mod_limit")
+async def cb_scoring_mod_limit(callback: CallbackQuery):
+    await callback.answer("Лимит использования этого модификатора исчерпан", show_alert=True)
+
+
+@router.callback_query(GameForm.scoring_modifier, F.data.startswith("scoring:mod:"))
+async def cb_scoring_mod(callback: CallbackQuery, state: FSMContext):
+    logger.info("cb_scoring_mod called: %s", callback.data)
+    _, _, player_id_str, mod_type = callback.data.split(":")
+    player_id = int(player_id_str)
+
+    data = await state.get_data()
+    modifiers = data.get("scoring_modifiers", {})
+    player_key = str(player_id)
+
+    if mod_type == "none":
+        modifiers[player_key] = None
+    else:
+        modifiers[player_key] = mod_type
+
+    await state.update_data(scoring_modifiers=modifiers)
+    await _show_modifier_for_player(callback.message, state, player_id)
+    await callback.answer()
+
+
+@router.callback_query(GameForm.scoring_modifier, F.data.startswith("scoring:mod_done:"))
+async def cb_scoring_mod_done(callback: CallbackQuery, state: FSMContext):
+    logger.info("cb_scoring_mod_done called: %s", callback.data)
+    data = await state.get_data()
     idx = data["scoring_idx"] + 1
     await state.update_data(scoring_idx=idx)
+    await state.set_state(GameForm.scoring)
 
     cats = data["scoring_cats"]
     player_data = data["scoring_players"]
@@ -141,9 +233,11 @@ async def cb_scoring_done(callback: CallbackQuery, state: FSMContext):
 async def _finish_scoring(target: Message, state: FSMContext):
     data = await state.get_data()
     results = data["scoring_results"]
+    modifiers = data.get("scoring_modifiers", {})
     round_num = data["scoring_round"]
     lot_id = data["scoring_lot_id"]
     host_id = data.get("scoring_host_id")
+    modifier_multiplier = data.get("modifier_multiplier", 2)
     if not host_id:
         await target.answer("Ошибка: не удалось определить ведущего.")
         await state.clear()
@@ -162,7 +256,15 @@ async def _finish_scoring(target: Message, state: FSMContext):
         round_results = []
         for p in game.players:
             cat_results = results.get(str(p.id), {})
-            rr = apply_round_result(p, lot, round_num, cat_results)
+            mod_type = modifiers.get(str(p.id))
+            rr = apply_round_result(
+                p,
+                lot,
+                round_num,
+                cat_results,
+                modifier_type=mod_type,
+                modifier_multiplier=modifier_multiplier,
+            )
             session.add(rr)
             round_results.append(rr)
 

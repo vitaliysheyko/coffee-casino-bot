@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 from bot.services.games import (
     get_or_create_user,
@@ -19,8 +21,10 @@ from bot.services.scoring import (
     active_categories,
     calculate_round_score,
     build_leaderboard,
+    apply_round_result,
+    count_modifier_usage,
 )
-from bot.models import Lot, User, Game, GamePlayer
+from bot.models import Lot, User, Game, GamePlayer, RoundResult
 
 
 class TestSanitizeLotData:
@@ -195,3 +199,58 @@ class TestScoring:
         assert board[0]["rank"] == 1
         assert board[2]["name"] == "Bob"
         assert board[2]["rank"] == 3
+
+
+class TestModifierScoring:
+    def test_calculate_score_with_modifier(self):
+        results = {"country": True, "region": False, "process": True}
+        cats = ["country", "region", "process"]
+        correct, net, lost = calculate_round_score(results, cats, modifier_applied=True, modifier_multiplier=2)
+        assert correct == 2
+        assert net == 7  # (2 correct * 1 * 2 base) * 2 mod - 1 lost = 8 - 1 = 7
+        assert lost == 1
+
+    def test_apply_round_result_with_modifier(self):
+        lot = Lot(title="Test", country="Brazil", process="natural")
+        player = GamePlayer(display_name="Alice", total_score=10)
+        rr = apply_round_result(
+            player,
+            lot,
+            round_number=1,
+            category_results={"country": True, "process": True},
+            modifier_type="spoon",
+            modifier_multiplier=2,
+        )
+        assert rr.modifier_applied is True
+        assert rr.modifier_type == "spoon"
+        # 2 correct * 1 * 2 base = 4, * 2 modifier = 8
+        assert rr.chips_won == 8
+        assert player.total_score == 18
+
+    async def test_count_modifier_usage(self, session):
+        user = User(id=1, full_name="Host")
+        session.add(user)
+        game = Game(code="TEST", host_id=1, status="finished")
+        session.add(game)
+        await session.commit()
+
+        player = GamePlayer(game_id=game.id, display_name="Alice", total_score=10)
+        session.add(player)
+        lot = Lot(title="Test", owner_id=1)
+        session.add(lot)
+        await session.commit()
+
+        rr1 = RoundResult(game_id=game.id, player_id=player.id, lot_id=lot.id, round_number=1, modifier_type="spoon", modifier_applied=True)
+        rr2 = RoundResult(game_id=game.id, player_id=player.id, lot_id=lot.id, round_number=2, modifier_type="spoon", modifier_applied=True)
+        rr3 = RoundResult(game_id=game.id, player_id=player.id, lot_id=lot.id, round_number=3, modifier_type="deer", modifier_applied=True)
+        session.add_all([rr1, rr2, rr3])
+        await session.commit()
+
+        count = await count_modifier_usage(session, game.id, player.id, "spoon")
+        assert count == 2
+
+        deer_count = await count_modifier_usage(session, game.id, player.id, "deer")
+        assert deer_count == 1
+
+        sniffer_count = await count_modifier_usage(session, game.id, player.id, "sniffer")
+        assert sniffer_count == 0

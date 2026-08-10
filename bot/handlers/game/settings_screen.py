@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from typing import Optional
 
@@ -6,6 +8,7 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardMarkup
 
+from bot.constants import MODIFIER_LABELS, MODIFIER_TYPES
 from bot.database import async_session
 from bot.models import User
 from sqlalchemy import select
@@ -24,10 +27,36 @@ async def _get_user(callback: CallbackQuery) -> Optional[User]:
         return result.scalar_one_or_none()
 
 
+def _mod_enabled(user: User, mod_type: str) -> bool:
+    if mod_type == "spoon":
+        return user.mod_spoon_enabled
+    if mod_type == "deer":
+        return user.mod_deer_enabled
+    if mod_type == "sniffer":
+        return user.mod_sniffer_enabled
+    return False
+
+
+def _toggle_mod(user: User, mod_type: str):
+    if mod_type == "spoon":
+        user.mod_spoon_enabled = not user.mod_spoon_enabled
+    elif mod_type == "deer":
+        user.mod_deer_enabled = not user.mod_deer_enabled
+    elif mod_type == "sniffer":
+        user.mod_sniffer_enabled = not user.mod_sniffer_enabled
+
+
 def settings_kb(user: User, total_rounds: int = 0) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    mod = "✅" if user.modifiers_enabled else "⏸"
-    b.button(text=f"{mod} Модификатор ×{user.modifier_multiplier}", callback_data="sett:toggle_mod")
+
+    b.button(text=f"🧪 Множитель модификатора ×{user.modifier_multiplier}", callback_data="sett:mod_mult")
+
+    for mod_type in MODIFIER_TYPES:
+        enabled = _mod_enabled(user, mod_type)
+        icon = "✅" if enabled else "⏸"
+        label = MODIFIER_LABELS.get(mod_type, mod_type)
+        b.button(text=f"{icon} {label}", callback_data=f"sett:toggle_mod:{mod_type}")
+
     b.button(text=f"🌍 Континент ×{user.sector_continent}", callback_data="sett:continent")
     b.button(text=f"🏳 Страна ×{user.sector_country}", callback_data="sett:country")
     b.button(text=f"⚙️ Обработка ×{user.sector_process}", callback_data="sett:process")
@@ -56,33 +85,61 @@ async def cb_settings(callback: CallbackQuery):
         return
 
     qcfg = user.quick_config or _quick_defaults()
+    mod_status = []
+    for mod_type in MODIFIER_TYPES:
+        enabled = _mod_enabled(user, mod_type)
+        label = MODIFIER_LABELS.get(mod_type, mod_type)
+        mod_status.append(f"{'вкл' if enabled else 'выкл'} {label}")
+    mod_status_text = "\n  ".join(mod_status)
+
     await callback.message.edit_text(
         f"⚙️ <b>Настройки</b>\n\n"
-        f"Модификатор: {'вкл' if user.modifiers_enabled else 'выкл'} ×{user.modifier_multiplier}\n"
+        f"🧪 Множитель модификатора: ×{user.modifier_multiplier}\n"
+        f"Модификаторы:\n"
+        f"  {mod_status_text}\n\n"
         f"Континент ×{user.sector_continent}\n"
         f"Страна ×{user.sector_country}\n"
         f"Обработка ×{user.sector_process}\n"
         f"Прочее ×{user.sector_other}\n\n"
         f"⚡ <b>Быстрая игра</b>\n"
-        f"Раундов: {qcfg['rounds']} | Таймер: {qcfg['timer']} мин | Фишек: {qcfg['chips']}",
+        f"Раундов: {qcfg['rounds']} | Таймер: {qcfg['timer']} мин | Фишек: {qcfg['chips']}♟",
         reply_markup=settings_kb(user),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data == "sett:toggle_mod")
-async def cb_toggle_mod(callback: CallbackQuery):
+@router.callback_query(F.data == "sett:mod_mult")
+async def cb_mod_mult(callback: CallbackQuery):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = result.scalar_one_or_none()
-        if not user: return
-        user.modifiers_enabled = not user.modifiers_enabled
+        if not user:
+            return
+        user.modifier_multiplier = _cycle(user.modifier_multiplier, [2, 3, 4, 5])
         await session.commit()
     await callback.message.edit_text(
-        f"⚙️ <b>Настройки</b>\n\nМодификатор: {'вкл' if user.modifiers_enabled else 'выкл'} ×{user.modifier_multiplier}",
+        f"⚙️ <b>Настройки</b>\n\nМножитель модификатора: ×{user.modifier_multiplier}",
         reply_markup=settings_kb(user),
     )
-    await callback.answer(f"Мод {'вкл' if user.modifiers_enabled else 'выкл'}")
+    await callback.answer(f"×{user.modifier_multiplier}")
+
+
+@router.callback_query(F.data.startswith("sett:toggle_mod:"))
+async def cb_toggle_mod(callback: CallbackQuery):
+    mod_type = callback.data.split(":")[2]
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == callback.from_user.id))
+        user = result.scalar_one_or_none()
+        if not user or mod_type not in MODIFIER_TYPES:
+            await callback.answer("Ошибка", show_alert=True)
+            return
+        _toggle_mod(user, mod_type)
+        await session.commit()
+    await callback.message.edit_text(
+        f"⚙️ <b>Настройки</b>\n\n{MODIFIER_LABELS.get(mod_type, mod_type)}: {'вкл' if _mod_enabled(user, mod_type) else 'выкл'}",
+        reply_markup=settings_kb(user),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "sett:continent")
@@ -106,7 +163,8 @@ async def _cycle_field(callback: CallbackQuery, field: str):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = result.scalar_one_or_none()
-        if not user: return
+        if not user:
+            return
         current = getattr(user, field)
         setattr(user, field, _cycle(current, [2, 3, 4, 5]))
         await session.commit()
@@ -120,7 +178,8 @@ async def _cycle_field(callback: CallbackQuery, field: str):
 @router.callback_query(F.data == "sett:bet_limits")
 async def cb_bet_limits(callback: CallbackQuery):
     user = await _get_user(callback)
-    if not user: return
+    if not user:
+        return
 
     qcfg = user.quick_config or _quick_defaults()
     tr = qcfg["rounds"]
@@ -152,7 +211,8 @@ async def cb_bl_round(callback: CallbackQuery):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = result.scalar_one_or_none()
-        if not user: return
+        if not user:
+            return
         qcfg = user.quick_config or _quick_defaults()
         tr = qcfg["rounds"]
         limits = list(user.bet_limits_json or [])
@@ -183,7 +243,8 @@ async def cb_bl_all(callback: CallbackQuery):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = result.scalar_one_or_none()
-        if not user: return
+        if not user:
+            return
         qcfg = user.quick_config or _quick_defaults()
         tr = qcfg["rounds"]
         limits = list(user.bet_limits_json or [])

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from aiogram import Router
 
 from bot.handlers.game import setup, players, round, scoring, controls, calculator, settings_screen

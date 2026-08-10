@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 BET_CATEGORIES = ["country", "region", "process", "variety", "roast_level"]
 
 CATEGORY_LABELS = {
@@ -6,6 +8,20 @@ CATEGORY_LABELS = {
     "process": "Обработка",
     "variety": "Разновидность",
     "roast_level": "Обжарка",
+}
+
+MODIFIER_TYPES = ["spoon", "deer", "sniffer"]
+
+MODIFIER_LABELS = {
+    "spoon": "🥄 Ложка",
+    "deer": "🦌 Дичь",
+    "sniffer": "👃 Нюхлер",
+}
+
+MODIFIER_EMOJIS = {
+    "spoon": "🥄",
+    "deer": "🦌",
+    "sniffer": "👃",
 }
 
 LOT_FIELD_NAMES = {

@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from typing import Optional
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.constants import CATEGORY_LABELS
-from bot.models import GamePlayer, Lot
+from bot.constants import CATEGORY_LABELS, MODIFIER_LABELS, MODIFIER_TYPES
+from bot.models import GamePlayer, Lot, User
 from bot.services.scoring import active_categories
 
 
@@ -88,6 +90,58 @@ def build_round_result_kb(
     builder.row(InlineKeyboardButton(
         text="🟢 Готово",
         callback_data=f"scoring:done:{player_id}",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="❌ Отмена",
+        callback_data="scoring:cancel",
+    ))
+    return builder.as_markup()
+
+
+def build_modifier_kb(
+    player_id: int,
+    user: User,
+    usage_counts: dict[str, int],
+    current_modifier: Optional[str] = None,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    for mod_type in MODIFIER_TYPES:
+        enabled = getattr(user, f"mod_{mod_type}_enabled", False)
+        used = usage_counts.get(mod_type, 0)
+        remaining = max(0, 2 - used)
+
+        if not enabled:
+            continue
+
+        if current_modifier == mod_type:
+            prefix = "✅ "
+        elif remaining <= 0:
+            prefix = "❌ "
+        else:
+            prefix = "⬜ "
+
+        label = MODIFIER_LABELS.get(mod_type, mod_type)
+        if remaining > 0:
+            builder.row(InlineKeyboardButton(
+                text=f"{prefix}{label} (ост. {remaining})",
+                callback_data=f"scoring:mod:{player_id}:{mod_type}",
+            ))
+        else:
+            builder.row(InlineKeyboardButton(
+                text=f"{prefix}{label} (лимит)",
+                callback_data="scoring:mod_limit",
+            ))
+
+    no_mod_text = "✅ Без модификатора" if not current_modifier else "⬜ Без модификатора"
+    builder.row(InlineKeyboardButton(
+        text=no_mod_text,
+        callback_data=f"scoring:mod:{player_id}:none",
+    ))
+
+    builder.row(InlineKeyboardButton(
+        text="🟢 Готово",
+        callback_data=f"scoring:mod_done:{player_id}",
     ))
     builder.row(InlineKeyboardButton(
         text="❌ Отмена",

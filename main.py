@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -15,8 +17,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from bot.config import settings
 from bot.database import init_db, async_session
 from bot.handlers import start, lots, game, history, errors
-from bot.models import Game
-from sqlalchemy import select
+from bot.constants import GameStatus
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ class WebHandler(BaseHTTPRequestHandler):
     async def _get_timer_data(self, code: str):
         async with async_session() as session:
             result = await session.execute(
-                select(Game).where(Game.code == code, Game.status != "finished")
+                select(Game).where(Game.code == code, Game.status != GameStatus.FINISHED)
             )
             game = result.scalar_one_or_none()
             if not game:
@@ -180,7 +181,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 return None
 
             remaining = 0
-            if game.status == "round_active" and game.round_started_at:
+            if game.status == GameStatus.ROUND_ACTIVE and game.round_started_at:
                 elapsed = (datetime.now(timezone.utc) - game.round_started_at).total_seconds()
                 total = (game.timer_minutes or 5) * 60
                 remaining = max(0, total - elapsed)

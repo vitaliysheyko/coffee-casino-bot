@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -295,7 +297,7 @@ async def cb_swap_cancel(callback: CallbackQuery):
         lot = game.current_lot
 
     timer = game.timer_minutes or 5
-    host_text = format_host_card(game.current_round, game.total_rounds, lot.title if lot else "?", timer, len(game.players), game.settings)
+    host_text = format_host_card(game.current_round, game.total_rounds, lot.title if lot else "?", timer, len(game.players))
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.answer()
 
