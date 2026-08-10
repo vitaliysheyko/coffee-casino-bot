@@ -106,7 +106,7 @@ def format_leaderboard(players: list[GamePlayer], title: str = "Турнирна
     return "\n".join(lines)
 
 
-def format_round_summary(round_number: int, lot: Lot, results: list[RoundResult]) -> str:
+def format_round_summary(round_number: int, lot: Lot, results: list[RoundResult], player_names: dict[int, str] | None = None) -> str:
     lines = [f"<b>Раунд {round_number} — итоги</b>", f"Лот: {lot.title}", ""]
     cats = active_categories(lot)
     cat_labels = CATEGORY_LABELS
@@ -119,16 +119,16 @@ def format_round_summary(round_number: int, lot: Lot, results: list[RoundResult]
         lines.append("")
         lines.append("Результаты игроков:")
         for r in results:
-            player = r.player
+            player_name = player_names.get(r.player_id, "Игрок") if player_names else r.player.display_name
             correct_cats = [cat_labels[c] for c in cats if getattr(r, f"{c}_correct", False)]
             mod_text = ""
+            sign = "+" if r.chips_won >= 0 else ""
             if r.modifier_applied and r.modifier_type:
                 mod_text = f" [{MODIFIER_LABELS.get(r.modifier_type, r.modifier_type)}]"
             if correct_cats:
-                sign = "+" if r.chips_won >= 0 else ""
-                lines.append(f"  {player.display_name}: {sign}{r.chips_won}{mod_text} ({' + '.join(correct_cats)})")
+                lines.append(f"  {player_name}: {sign}{r.chips_won}{mod_text} ({' + '.join(correct_cats)})")
             elif r.source == "calculator":
-                lines.append(f"  {player.display_name}: {sign}{r.chips_won}{mod_text} (ручной подсчёт)")
+                lines.append(f"  {player_name}: {sign}{r.chips_won}{mod_text} (ручной подсчёт)")
             else:
-                lines.append(f"  {player.display_name}: {r.chips_won}{mod_text} (не угадал ни одной категории)")
+                lines.append(f"  {player_name}: {r.chips_won}{mod_text} (не угадал ни одной категории)")
     return "\n".join(lines)

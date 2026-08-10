@@ -254,6 +254,7 @@ async def _finish_scoring(target: Message, state: FSMContext):
         lot = await get_lot_by_id(session, lot_id, game.host_id)
 
         round_results = []
+        player_names = {}
         for p in game.players:
             cat_results = results.get(str(p.id), {})
             mod_type = modifiers.get(str(p.id))
@@ -267,13 +268,14 @@ async def _finish_scoring(target: Message, state: FSMContext):
             )
             session.add(rr)
             round_results.append(rr)
+            player_names[p.id] = p.display_name
 
         await session.commit()
         game = await get_game_by_id(session, game.id)
 
     await state.clear()
 
-    summary = format_round_summary(round_num, lot, round_results)
+    summary = format_round_summary(round_num, lot, round_results, player_names)
     leaderboard = format_leaderboard(game.players)
 
     await target.answer(summary)
