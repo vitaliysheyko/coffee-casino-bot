@@ -76,7 +76,7 @@ async def cb_help(callback: CallbackQuery):
         "3. Ревел: ведущий объявляет правильные ответы\n"
         "4. Подсчёт: ведущий вносит ставки в калькулятор\n"
         "5. Турнирная таблица обновляется\n\n"
-        "<b>Множители можно менять</b> в ⚙️ Множители"
+        "<b>Множители можно менять</b> в ⚙️ Настройки"
     )
     await callback.message.edit_text(text, reply_markup=back_to_main_kb())
     await callback.answer()

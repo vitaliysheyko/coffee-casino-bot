@@ -46,7 +46,7 @@ async def cb_settings(callback: CallbackQuery):
         await session.commit()
 
     await callback.message.edit_text(
-        f"⚙️ <b>Множители игры</b>\n\n"
+        f"⚙️ <b>Настройки игры</b>\n\n"
         f"Модификатор: {'вкл' if s.modifiers_enabled else 'выкл'} ×{s.modifier_multiplier}\n"
         f"Континент ×{s.sector_continent}\n"
         f"Страна ×{s.sector_country}\n"
@@ -77,7 +77,7 @@ async def cb_toggle_mod(callback: CallbackQuery):
         await session.commit()
 
     await callback.message.edit_text(
-        f"⚙️ <b>Множители игры</b>\n\n"
+        f"⚙️ <b>Настройки игры</b>\n\n"
         f"Модификатор: {'вкл' if s.modifiers_enabled else 'выкл'} ×{s.modifier_multiplier}",
         reply_markup=settings_kb(s),
     )
