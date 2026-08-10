@@ -98,7 +98,7 @@ class GameSettings(Base):
     sector_process: Mapped[int] = mapped_column(Integer, default=2)
     sector_other: Mapped[int] = mapped_column(Integer, default=3)
 
-    bet_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    bet_limits_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     game: Mapped["Game"] = relationship(back_populates="settings")
 
