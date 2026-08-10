@@ -1,12 +1,9 @@
-from __future__ import annotations
-
 import logging
 from typing import Optional
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import InlineKeyboardMarkup
 
 from bot.constants import MODIFIER_LABELS, MODIFIER_TYPES
 from bot.database import async_session
@@ -15,10 +12,6 @@ from sqlalchemy import select
 
 router = Router()
 logger = logging.getLogger(__name__)
-
-
-def _quick_defaults() -> dict:
-    return {"rounds": 6, "timer": 3, "chips": 10}
 
 
 async def _get_user(callback: CallbackQuery) -> Optional[User]:
@@ -46,10 +39,38 @@ def _toggle_mod(user: User, mod_type: str):
         user.mod_sniffer_enabled = not user.mod_sniffer_enabled
 
 
+def _clamp(value: int, min_val: int, max_val: int) -> int:
+    return max(min_val, min(min_val if max_val < min_val else max_val, value))
+
+
+def _add_value_row(
+    builder: InlineKeyboardBuilder,
+    label: str,
+    value: int,
+    minus_cb: str,
+    plus_cb: str,
+):
+    builder.row(
+        InlineKeyboardButton(text=f"{label}: {value}", callback_data="sett:nop"),
+        InlineKeyboardButton(text="−", callback_data=minus_cb),
+        InlineKeyboardButton(text="+", callback_data=plus_cb),
+    )
+
+
 def settings_kb(user: User, total_rounds: int = 0) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
 
-    b.button(text=f"🧪 Множитель модификатора ×{user.modifier_multiplier}", callback_data="sett:mod_mult")
+    b.button(text="⚙️ <b>Параметры быстрой игры</b>", callback_data="sett:nop")
+    _add_value_row(b, "Раундов", user.default_rounds, "sett:dec:rounds", "sett:inc:rounds")
+    _add_value_row(b, "Таймер, мин", user.default_timer, "sett:dec:timer", "sett:inc:timer")
+    _add_value_row(b, "Фишек", user.default_chips, "sett:dec:chips", "sett:inc:chips")
+
+    b.button(text="🧪 Множители", callback_data="sett:nop")
+    _add_value_row(b, "Модификатор", user.modifier_multiplier, "sett:dec:mod_mult", "sett:inc:mod_mult")
+    _add_value_row(b, "Континент", user.sector_continent, "sett:dec:continent", "sett:inc:continent")
+    _add_value_row(b, "Страна", user.sector_country, "sett:dec:country", "sett:inc:country")
+    _add_value_row(b, "Обработка", user.sector_process, "sett:dec:process", "sett:inc:process")
+    _add_value_row(b, "Прочее", user.sector_other, "sett:dec:other", "sett:inc:other")
 
     for mod_type in MODIFIER_TYPES:
         enabled = _mod_enabled(user, mod_type)
@@ -57,24 +78,15 @@ def settings_kb(user: User, total_rounds: int = 0) -> InlineKeyboardMarkup:
         label = MODIFIER_LABELS.get(mod_type, mod_type)
         b.button(text=f"{icon} {label}", callback_data=f"sett:toggle_mod:{mod_type}")
 
-    b.button(text=f"🌍 Континент ×{user.sector_continent}", callback_data="sett:continent")
-    b.button(text=f"🏳 Страна ×{user.sector_country}", callback_data="sett:country")
-    b.button(text=f"⚙️ Обработка ×{user.sector_process}", callback_data="sett:process")
-    b.button(text=f"📐 Прочее ×{user.sector_other}", callback_data="sett:other")
     b.button(text="📏 Лимит ставок по раундам", callback_data="sett:bet_limits")
-    qcfg = user.quick_config or _quick_defaults()
-    b.button(text=f"⚡ Быстрая: {qcfg['rounds']} раундов / {qcfg['timer']} мин / {qcfg['chips']}♟", callback_data="sett:quick")
     b.button(text="« К игре" if total_rounds else "« Меню", callback_data="game:refresh" if total_rounds else "main_menu")
     b.adjust(1)
     return b.as_markup()
 
 
-def _cycle(value, options):
-    try:
-        idx = options.index(value)
-    except ValueError:
-        idx = 0
-    return options[(idx + 1) % len(options)]
+@router.callback_query(F.data == "sett:nop")
+async def cb_nop(callback: CallbackQuery):
+    await callback.answer()
 
 
 @router.callback_query(F.data == "game:settings")
@@ -84,7 +96,6 @@ async def cb_settings(callback: CallbackQuery):
         await callback.answer("Ошибка", show_alert=True)
         return
 
-    qcfg = user.quick_config or _quick_defaults()
     mod_status = []
     for mod_type in MODIFIER_TYPES:
         enabled = _mod_enabled(user, mod_type)
@@ -94,34 +105,74 @@ async def cb_settings(callback: CallbackQuery):
 
     await callback.message.edit_text(
         f"⚙️ <b>Настройки</b>\n\n"
-        f"🧪 Множитель модификатора: ×{user.modifier_multiplier}\n"
-        f"Модификаторы:\n"
+        f"<b>Параметры быстрой игры:</b>\n"
+        f"  Раундов: {user.default_rounds}\n"
+        f"  Таймер: {user.default_timer} мин\n"
+        f"  Фишек: {user.default_chips}\n\n"
+        f"<b>Множители:</b>\n"
+        f"  Модификатор: ×{user.modifier_multiplier}\n"
+        f"  Континент: ×{user.sector_continent}\n"
+        f"  Страна: ×{user.sector_country}\n"
+        f"  Обработка: ×{user.sector_process}\n"
+        f"  Прочее: ×{user.sector_other}\n\n"
+        f"<b>Модификаторы:</b>\n"
         f"  {mod_status_text}\n\n"
-        f"Континент ×{user.sector_continent}\n"
-        f"Страна ×{user.sector_country}\n"
-        f"Обработка ×{user.sector_process}\n"
-        f"Прочее ×{user.sector_other}\n\n"
-        f"⚡ <b>Быстрая игра</b>\n"
-        f"Раундов: {qcfg['rounds']} | Таймер: {qcfg['timer']} мин | Фишек: {qcfg['chips']}♟",
+        f"Используйте кнопки ниже, чтобы изменить значения.",
         reply_markup=settings_kb(user),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data == "sett:mod_mult")
-async def cb_mod_mult(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("sett:inc:") | F.data.startswith("sett:dec:"))
+async def cb_adjust_value(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    direction = parts[1]
+    field = parts[2]
+
+    field_limits = {
+        "rounds": (1, 12, 1),
+        "timer": (0, 30, 1),
+        "chips": (1, 1000, 5),
+        "mod_mult": (2, 5, 1),
+        "continent": (2, 5, 1),
+        "country": (2, 5, 1),
+        "process": (2, 5, 1),
+        "other": (2, 5, 1),
+    }
+
+    model_field_map = {
+        "rounds": "default_rounds",
+        "timer": "default_timer",
+        "chips": "default_chips",
+        "mod_mult": "modifier_multiplier",
+        "continent": "sector_continent",
+        "country": "sector_country",
+        "process": "sector_process",
+        "other": "sector_other",
+    }
+
+    model_field = model_field_map.get(field)
+    limits = field_limits.get(field)
+    if not model_field or not limits:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+
+    min_val, max_val, step = limits
+    delta = step if direction == "inc" else -step
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = result.scalar_one_or_none()
         if not user:
+            await callback.answer("Ошибка", show_alert=True)
             return
-        user.modifier_multiplier = _cycle(user.modifier_multiplier, [2, 3, 4, 5])
+
+        current = getattr(user, model_field)
+        new_value = _clamp(current + delta, min_val, max_val)
+        setattr(user, model_field, new_value)
         await session.commit()
-    await callback.message.edit_text(
-        f"⚙️ <b>Настройки</b>\n\nМножитель модификатора: ×{user.modifier_multiplier}",
-        reply_markup=settings_kb(user),
-    )
-    await callback.answer(f"×{user.modifier_multiplier}")
+
+    await cb_settings(callback)
 
 
 @router.callback_query(F.data.startswith("sett:toggle_mod:"))
@@ -135,44 +186,7 @@ async def cb_toggle_mod(callback: CallbackQuery):
             return
         _toggle_mod(user, mod_type)
         await session.commit()
-    await callback.message.edit_text(
-        f"⚙️ <b>Настройки</b>\n\n{MODIFIER_LABELS.get(mod_type, mod_type)}: {'вкл' if _mod_enabled(user, mod_type) else 'выкл'}",
-        reply_markup=settings_kb(user),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "sett:continent")
-async def cb_continent(callback: CallbackQuery):
-    await _cycle_field(callback, "sector_continent")
-
-@router.callback_query(F.data == "sett:country")
-async def cb_country(callback: CallbackQuery):
-    await _cycle_field(callback, "sector_country")
-
-@router.callback_query(F.data == "sett:process")
-async def cb_process(callback: CallbackQuery):
-    await _cycle_field(callback, "sector_process")
-
-@router.callback_query(F.data == "sett:other")
-async def cb_other(callback: CallbackQuery):
-    await _cycle_field(callback, "sector_other")
-
-
-async def _cycle_field(callback: CallbackQuery, field: str):
-    async with async_session() as session:
-        result = await session.execute(select(User).where(User.id == callback.from_user.id))
-        user = result.scalar_one_or_none()
-        if not user:
-            return
-        current = getattr(user, field)
-        setattr(user, field, _cycle(current, [2, 3, 4, 5]))
-        await session.commit()
-    await callback.message.edit_text(
-        f"⚙️ <b>Настройки</b>\n\n{field}: ×{getattr(user, field)}",
-        reply_markup=settings_kb(user),
-    )
-    await callback.answer(f"×{getattr(user, field)}")
+    await cb_settings(callback)
 
 
 @router.callback_query(F.data == "sett:bet_limits")
@@ -181,9 +195,7 @@ async def cb_bet_limits(callback: CallbackQuery):
     if not user:
         return
 
-    qcfg = user.quick_config or _quick_defaults()
-    tr = qcfg["rounds"]
-
+    tr = user.default_rounds
     limits = user.bet_limits_json or []
     while len(limits) < tr:
         limits.append(None)
@@ -213,8 +225,7 @@ async def cb_bl_round(callback: CallbackQuery):
         user = result.scalar_one_or_none()
         if not user:
             return
-        qcfg = user.quick_config or _quick_defaults()
-        tr = qcfg["rounds"]
+        tr = user.default_rounds
         limits = list(user.bet_limits_json or [])
         while len(limits) < tr:
             limits.append(None)
@@ -245,8 +256,7 @@ async def cb_bl_all(callback: CallbackQuery):
         user = result.scalar_one_or_none()
         if not user:
             return
-        qcfg = user.quick_config or _quick_defaults()
-        tr = qcfg["rounds"]
+        tr = user.default_rounds
         limits = list(user.bet_limits_json or [])
         while len(limits) < tr:
             limits.append(None)
@@ -261,24 +271,9 @@ async def cb_bl_all(callback: CallbackQuery):
     await cb_bet_limits(callback)
 
 
-@router.callback_query(F.data == "sett:quick")
-async def cb_quick_config(callback: CallbackQuery):
-    async with async_session() as session:
-        result = await session.execute(select(User).where(User.id == callback.from_user.id))
-        user = result.scalar_one_or_none()
-        if not user:
-            await callback.answer("Ошибка", show_alert=True)
-            return
-        qcfg = user.quick_config or _quick_defaults()
-        rounds_opts = [4, 6, 8, 10, 12]
-        idx = rounds_opts.index(qcfg["rounds"]) if qcfg["rounds"] in rounds_opts else -1
-        qcfg["rounds"] = rounds_opts[(idx + 1) % len(rounds_opts)]
-        user.quick_config = qcfg
-        await session.commit()
-
-    await callback.message.edit_text(
-        f"⚙️ <b>Настройки</b>\n\n"
-        f"⚡ Быстрая игра: {qcfg['rounds']} раундов / {qcfg['timer']} мин / {qcfg['chips']}♟",
-        reply_markup=settings_kb(user),
-    )
-    await callback.answer(f"Раундов: {qcfg['rounds']}")
+def _cycle(value, options):
+    try:
+        idx = options.index(value)
+    except ValueError:
+        idx = 0
+    return options[(idx + 1) % len(options)]

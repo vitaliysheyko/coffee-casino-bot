@@ -21,7 +21,10 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     full_name: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    quick_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
+
+    default_rounds: Mapped[int] = mapped_column(Integer, default=6)
+    default_timer: Mapped[int] = mapped_column(Integer, default=3)
+    default_chips: Mapped[int] = mapped_column(Integer, default=10)
 
     modifier_multiplier: Mapped[int] = mapped_column(Integer, default=2)
     mod_spoon_enabled: Mapped[bool] = mapped_column(Boolean, default=True)

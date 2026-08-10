@@ -105,11 +105,16 @@ async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
 
         result = await session.execute(select(User).where(User.id == user.id))
         db_user = result.scalar_one_or_none()
-        qcfg = db_user.quick_config if db_user and db_user.quick_config else {"rounds": 6, "timer": 3, "chips": 10}
-        
+
         lot_ids = [l.id for l in lots]
-        game = await create_game(session, user.id, total_rounds=qcfg["rounds"], starting_chips=qcfg["chips"], lot_ids=lot_ids)
-        game.timer_minutes = qcfg["timer"]
+        game = await create_game(
+            session,
+            user.id,
+            total_rounds=db_user.default_rounds if db_user else 6,
+            starting_chips=db_user.default_chips if db_user else 10,
+            lot_ids=lot_ids,
+        )
+        game.timer_minutes = db_user.default_timer if db_user else 3
         await session.commit()
         game = await get_game_by_id(session, game.id)
 
@@ -117,7 +122,14 @@ async def cb_quick_game(callback: CallbackQuery, state: FSMContext):
 
     lot_titles = [l.title for l in lots]
     await callback.message.edit_text(
-        format_game_setup_prompt(game.code, qcfg["timer"], qcfg["rounds"], 0, settings.web_url, lot_titles),
+        format_game_setup_prompt(
+            game.code,
+            db_user.default_timer if db_user else 3,
+            db_user.default_rounds if db_user else 6,
+            0,
+            settings.web_url,
+            lot_titles,
+        ),
         reply_markup=game_setup_kb(),
     )
     await callback.answer()
