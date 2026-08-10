@@ -97,7 +97,7 @@ async def process_timer_setup(message: Message, state: FSMContext):
     await state.update_data(game_config=config)
     await state.set_state(GameForm.setup_chips)
     await message.answer(
-        f"Таймер: {minutes} мин\n\nСколько стартовых фишек у каждого игрока? (1–50)",
+        f"Таймер: {minutes} мин\n\nСколько стартовых фишек у каждого игрока? (1–1000)",
         reply_markup=cancel_fsm_kb(),
     )
 
@@ -106,10 +106,10 @@ async def process_timer_setup(message: Message, state: FSMContext):
 async def process_chips_setup(message: Message, state: FSMContext):
     try:
         chips = int(message.text.strip())
-        if not 1 <= chips <= 50:
+        if not 1 <= chips <= 1000:
             raise ValueError
     except ValueError:
-        await message.answer("Введите число от 1 до 50:")
+        await message.answer("Введите число от 1 до 1000:")
         return
 
     data = await state.get_data()
