@@ -19,7 +19,7 @@ from bot.keyboards.game import (
     post_round_kb,
 )
 from bot.keyboards.common import main_menu_kb
-from bot.services.games import get_active_game_for_host, get_game_by_id, format_players_list
+from bot.services.games import get_active_game_for_host, get_game_by_id, format_players_list, get_timer_minutes
 from bot.services.lots import get_user_lots, get_lot_by_id, format_lot_for_host
 from bot.services.scoring import active_categories
 from bot.services.script import format_host_card, format_lot_cheatsheet, category_hint, modifiers_reference, sectors_reference
@@ -109,7 +109,7 @@ async def cb_start_round(callback: CallbackQuery, state: FSMContext):
 
 
 async def _send_round_messages(callback: CallbackQuery, game, lot):
-    timer = game.timer_minutes or 5
+    timer = get_timer_minutes(game)
     host_text = format_host_card(game.current_round, game.total_rounds, lot.title, timer, len(game.players))
     cat_text = category_hint(lot)
 
@@ -171,7 +171,7 @@ async def cb_select_lot(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.update_data(current_round_cats=active_categories(lot))
 
-    timer = game.timer_minutes or 5
+    timer = get_timer_minutes(game)
     host_text = format_host_card(round_num, game.total_rounds, lot.title, timer, len(game.players))
     cat_text = category_hint(lot)
 
@@ -260,7 +260,7 @@ async def cb_swap_to(callback: CallbackQuery, state: FSMContext):
 
     cancel_timer(callback.bot, game.id)
 
-    timer = game.timer_minutes or 5
+    timer = get_timer_minutes(game)
     host_text = format_host_card(game.current_round, game.total_rounds, new_lot.title, timer, len(game.players))
 
     if timer > 0:
@@ -296,7 +296,7 @@ async def cb_swap_cancel(callback: CallbackQuery):
         game = await get_game_by_id(session, game.id)
         lot = game.current_lot
 
-    timer = game.timer_minutes or 5
+    timer = get_timer_minutes(game)
     host_text = format_host_card(game.current_round, game.total_rounds, lot.title if lot else "?", timer, len(game.players))
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.answer()

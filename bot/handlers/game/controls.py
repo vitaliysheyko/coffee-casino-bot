@@ -15,7 +15,7 @@ from bot.keyboards.game import (
     leaderboard_kb,
 )
 from bot.keyboards.common import main_menu_kb, confirm_kb
-from bot.services.games import get_active_game_for_host, get_game_by_id, format_players_list
+from bot.services.games import get_active_game_for_host, get_game_by_id, format_players_list, get_timer_minutes
 from bot.services.lots import format_lot_for_host
 from bot.services.scoring import build_leaderboard, format_leaderboard
 from bot.services.script import format_host_card, format_lot_cheatsheet, category_hint, format_finish_summary
@@ -124,7 +124,7 @@ async def cb_game_refresh(callback: CallbackQuery, state: FSMContext):
                 game.current_round,
                 game.total_rounds,
                 lot.title if lot else "?",
-                game.timer_minutes or 5,
+                get_timer_minutes(game),
                 len(game.players),
             ),
             reply_markup=round_active_host_kb(),

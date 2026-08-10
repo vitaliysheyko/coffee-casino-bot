@@ -12,3 +12,5 @@ class GameForm(StatesGroup):
     scoring = State()
     scoring_modifier = State()
     add_extra_round = State()
+    bet_limit_input = State()
+    bet_limit_all_input = State()

@@ -18,6 +18,9 @@ from bot.config import settings
 from bot.database import init_db, async_session
 from bot.handlers import start, lots, game, history, errors
 from bot.constants import GameStatus
+from bot.models import Game
+from bot.services.games import get_timer_minutes
+from sqlalchemy import select
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -183,7 +186,7 @@ class WebHandler(BaseHTTPRequestHandler):
             remaining = 0
             if game.status == GameStatus.ROUND_ACTIVE and game.round_started_at:
                 elapsed = (datetime.now(timezone.utc) - game.round_started_at).total_seconds()
-                total = (game.timer_minutes or 5) * 60
+                total = get_timer_minutes(game) * 60
                 remaining = max(0, total - elapsed)
 
             lot_title = game.current_lot.title if game.current_lot else None

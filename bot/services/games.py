@@ -158,3 +158,7 @@ async def get_finished_games_for_host(session: AsyncSession, host_id: int, limit
         )
     )
     return list(result.scalars().all())
+
+
+def get_timer_minutes(game: Game) -> int:
+    return game.timer_minutes if game.timer_minutes is not None else 5

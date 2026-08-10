@@ -2,16 +2,24 @@ import logging
 from typing import Optional
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.constants import MODIFIER_LABELS, MODIFIER_TYPES
 from bot.database import async_session
 from bot.models import User
+from bot.states.game import GameForm
 from sqlalchemy import select
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+def _bl_cancel_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="sett:bl_cancel"))
+    return builder.as_markup()
 
 
 async def _get_user(callback: CallbackQuery) -> Optional[User]:
@@ -204,22 +212,22 @@ async def cb_bet_limits(callback: CallbackQuery):
     for r in range(tr):
         val = limits[r]
         label = f"Раунд {r+1}: {val if val else 'без лимита'}"
-        b.button(text=label, callback_data=f"sett:bl_round:{r}")
+        b.button(text=label, callback_data=f"sett:bl_edit:{r}")
     b.button(text="📐 Применить ко всем", callback_data="sett:bl_all")
     b.button(text="« Настройки", callback_data="game:settings")
     b.adjust(1)
 
     await callback.message.edit_text(
-        f"📏 <b>Лимит ставок — {tr} раундов</b>\n\nВыберите раунд чтобы изменить лимит",
+        f"📏 <b>Лимит ставок — {tr} раундов</b>\n\n"
+        f"Выберите раунд и введите лимит числом (0 = без лимита).",
         reply_markup=b.as_markup(),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("sett:bl_round:"))
-async def cb_bl_round(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("sett:bl_edit:"))
+async def cb_bl_edit(callback: CallbackQuery, state: FSMContext):
     round_idx = int(callback.data.split(":")[2])
-
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = result.scalar_one_or_none()
@@ -229,51 +237,127 @@ async def cb_bl_round(callback: CallbackQuery):
         limits = list(user.bet_limits_json or [])
         while len(limits) < tr:
             limits.append(None)
-        limits[round_idx] = _cycle(limits[round_idx] or 0, [None, 1, 2, 3, 4, 5])
+        current = limits[round_idx]
+
+    await state.set_state(GameForm.bet_limit_input)
+    await state.update_data(bl_edit_round_idx=round_idx)
+    await callback.message.edit_text(
+        f"📏 <b>Лимит ставок — Раунд {round_idx+1}</b>\n\n"
+        f"Текущий лимит: {current if current else 'без лимита'}\n\n"
+        f"Введите число от 0 до 1000. 0 = без лимита.",
+        reply_markup=_bl_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(GameForm.bet_limit_input)
+async def process_bet_limit(message: Message, state: FSMContext):
+    try:
+        value = int(message.text.strip())
+        if value < 0 or value > 1000:
+            raise ValueError
+    except ValueError:
+        await message.answer("Введите число от 0 до 1000 (0 = без лимита):")
+        return
+
+    data = await state.get_data()
+    round_idx = data.get("bl_edit_round_idx")
+    if round_idx is None:
+        await state.clear()
+        return
+
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == message.from_user.id))
+        user = result.scalar_one_or_none()
+        if not user:
+            await state.clear()
+            return
+        tr = user.default_rounds
+        limits = list(user.bet_limits_json or [])
+        while len(limits) < tr:
+            limits.append(None)
+        limits[round_idx] = value if value > 0 else None
         user.bet_limits_json = limits
         await session.commit()
+
+    await state.clear()
+    await message.answer(
+        f"✅ Раунд {round_idx+1}: лимит {limits[round_idx] if limits[round_idx] else 'без лимита'}",
+        reply_markup=_bl_cancel_kb(),
+    )
+    # Return to bet limits list
+    await cb_bet_limits_by_message(message)
+
+
+async def cb_bet_limits_by_message(message: Message):
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == message.from_user.id))
+        user = result.scalar_one_or_none()
+    if not user:
+        return
+
+    tr = user.default_rounds
+    limits = user.bet_limits_json or []
+    while len(limits) < tr:
+        limits.append(None)
 
     b = InlineKeyboardBuilder()
     for r in range(tr):
         val = limits[r]
         label = f"Раунд {r+1}: {val if val else 'без лимита'}"
-        b.button(text=label, callback_data=f"sett:bl_round:{r}")
+        b.button(text=label, callback_data=f"sett:bl_edit:{r}")
     b.button(text="📐 Применить ко всем", callback_data="sett:bl_all")
     b.button(text="« Настройки", callback_data="game:settings")
     b.adjust(1)
 
-    await callback.message.edit_text(
-        f"📏 <b>Лимит ставок</b>\n\nРаунд {round_idx+1}: {limits[round_idx] or 'без лимита'}",
+    await message.answer(
+        f"📏 <b>Лимит ставок — {tr} раундов</b>",
         reply_markup=b.as_markup(),
     )
-    await callback.answer(f"Раунд {round_idx+1}: {limits[round_idx] or 'без лимита'}")
 
 
 @router.callback_query(F.data == "sett:bl_all")
-async def cb_bl_all(callback: CallbackQuery):
+async def cb_bl_all(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(GameForm.bet_limit_all_input)
+    await callback.message.edit_text(
+        "📏 <b>Лимит ставок — все раунды</b>\n\n"
+        "Введите число от 0 до 1000. 0 = без лимита.",
+        reply_markup=_bl_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(GameForm.bet_limit_all_input)
+async def process_bet_limit_all(message: Message, state: FSMContext):
+    try:
+        value = int(message.text.strip())
+        if value < 0 or value > 1000:
+            raise ValueError
+    except ValueError:
+        await message.answer("Введите число от 0 до 1000 (0 = без лимита):")
+        return
+
     async with async_session() as session:
-        result = await session.execute(select(User).where(User.id == callback.from_user.id))
+        result = await session.execute(select(User).where(User.id == message.from_user.id))
         user = result.scalar_one_or_none()
         if not user:
+            await state.clear()
             return
         tr = user.default_rounds
-        limits = list(user.bet_limits_json or [])
-        while len(limits) < tr:
-            limits.append(None)
-        values = [l for l in limits if l is not None]
-        current = max(set(values), key=values.count) if values else 3
-        new_val = _cycle(current, [1, 2, 3, 4, 5, None])
-        limits = [new_val] * tr
+        limits = [value if value > 0 else None] * tr
         user.bet_limits_json = limits
         await session.commit()
 
-    await callback.answer(f"Все раунды: {new_val or 'без лимита'}")
+    await state.clear()
+    await message.answer(
+        f"✅ Все раунды: лимит {limits[0] if limits[0] else 'без лимита'}",
+        reply_markup=_bl_cancel_kb(),
+    )
+    await cb_bet_limits_by_message(message)
+
+
+@router.callback_query(F.data == "sett:bl_cancel")
+async def cb_bl_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     await cb_bet_limits(callback)
 
-
-def _cycle(value, options):
-    try:
-        idx = options.index(value)
-    except ValueError:
-        idx = 0
-    return options[(idx + 1) % len(options)]
