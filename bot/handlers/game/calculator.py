@@ -68,7 +68,7 @@ def _round_total(bets: list, mod: bool, mod_mult: int = 2) -> int:
     return won - lost
 
 
-def _format_bets(bets: list, mod: bool, mod_mult: int = 2) -> str:
+def _format_bets(bets: list) -> str:
     if not bets:
         return "—"
     lines = []
@@ -153,13 +153,14 @@ async def _render(callback: CallbackQuery, state: FSMContext):
     text = (
         f"🧮 <b>{player.display_name}</b>\n"
         f"Баланс: {player.total_score}♟\n\n"
-        f"<b>Ставки:</b>\n{_format_bets(bets, mod)}\n\n"
-        f"Сумма: +{won}♟"
+        f"<b>Ставки:</b>\n{_format_bets(bets)}\n"
     )
+    if won:
+        text += f"\n<b>Выигрыш: +{won}♟</b>"
+        if mod:
+            text += f" → ×{mod_mult}🧪 = <b>+{won * mod_mult}♟</b>"
     if lost:
-        text += f" − {lost}♟"
-    if mod and won:
-        text += f"\n🧪 ×{mod_mult} = <b>+{won * mod_mult}♟</b>"
+        text += f"\n<b>Проигрыш: −{lost}♟</b>"
     text += f"\n\n<b>Итого раунд: {rt:+d}♟</b>\n"
     text += f"После раунда: <b>{player.total_score + rt}♟</b>"
 
