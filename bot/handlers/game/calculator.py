@@ -8,15 +8,28 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.database import async_session
 from bot.services.games import get_active_game_for_host, get_game_by_id
+from bot.models import GameSettings
 
 router = Router()
 logger = logging.getLogger(__name__)
 
 CHIPS = [5, 10, 25, 50, 100]
-SECTOR_MULTS = [2, 3]
 
 
-def _player_calc_kb(player_id: int, modifier_on: bool, has_bets: bool, prev_id: int = 0, next_id: int = 0) -> InlineKeyboardMarkup:
+async def _get_game_multipliers(callback: CallbackQuery) -> tuple[list[int], int, bool]:
+    """Returns (sector multipliers, modifier multiplier, modifiers enabled)"""
+    async with async_session() as session:
+        game = await get_active_game_for_host(session, callback.from_user.id)
+        if game:
+            game = await get_game_by_id(session, game.id)
+            s = game.settings if game.settings else GameSettings(game_id=game.id)
+            mults = list(dict.fromkeys([s.sector_continent, s.sector_country, s.sector_process, s.sector_other]))
+            return sorted(mults), s.modifier_multiplier, s.modifiers_enabled
+    return [2, 3], 2, True  # defaults
+
+
+def _player_calc_kb(player_id: int, modifier_on: bool, has_bets: bool, mults: list[int], mod_mult: int,
+                     prev_id: int = 0, next_id: int = 0) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
 
     for val in CHIPS:
@@ -24,11 +37,11 @@ def _player_calc_kb(player_id: int, modifier_on: bool, has_bets: bool, prev_id: 
     b.adjust(len(CHIPS))
 
     b.button(text="❌", callback_data=f"calc:mult:{player_id}:0")
-    for m in SECTOR_MULTS:
+    for m in mults:
         b.button(text=f"×{m}", callback_data=f"calc:mult:{player_id}:{m}")
-    b.adjust(1 + len(SECTOR_MULTS))
+    b.adjust(1 + len(mults))
 
-    mod_text = "🧪 Мод ×2: ON" if modifier_on else "🧪 Мод ×2: OFF"
+    mod_text = f"🧪 Мод ×{mod_mult}: ON" if modifier_on else f"🧪 Мод ×{mod_mult}: OFF"
     b.button(text=mod_text, callback_data=f"calc:mod:{player_id}")
 
     if has_bets:
@@ -47,15 +60,15 @@ def _player_calc_kb(player_id: int, modifier_on: bool, has_bets: bool, prev_id: 
     return b.as_markup()
 
 
-def _round_total(bets: list, mod: bool) -> int:
+def _round_total(bets: list, mod: bool, mod_mult: int = 2) -> int:
     won = sum(b["amount"] * b["mult"] for b in bets if b["mult"])
     lost = sum(b["amount"] for b in bets if not b["mult"])
     if mod:
-        won *= 2
+        won *= mod_mult
     return won - lost
 
 
-def _format_bets(bets: list, mod: bool) -> str:
+def _format_bets(bets: list, mod: bool, mod_mult: int = 2) -> str:
     if not bets:
         return "—"
     lines = []
@@ -66,8 +79,8 @@ def _format_bets(bets: list, mod: bool) -> str:
             lines.append(f"{i}. {amt}♟ ❌ = −{amt}")
         else:
             bonus = amt * m
-            mod_text = f" ×2🧪" if mod else ""
-            lines.append(f"{i}. {amt}♟ ×{m}{mod_text} = +{bonus * (2 if mod else 1)}")
+            mod_text = f" ×{mod_mult}🧪" if mod else ""
+            lines.append(f"{i}. {amt}♟ ×{m}{mod_text} = +{bonus * (mod_mult if mod else 1)}")
     return "\n".join(lines)
 
 
@@ -116,6 +129,8 @@ async def _render(callback: CallbackQuery, state: FSMContext):
     bets = d.get("calc_bets", [])
     mod = d.get("calc_mod", False)
 
+    mults, mod_mult, _ = await _get_game_multipliers(callback)
+
     async with async_session() as session:
         game = await get_active_game_for_host(session, callback.from_user.id)
         if not game:
@@ -139,18 +154,18 @@ async def _render(callback: CallbackQuery, state: FSMContext):
 
     won_display = f"+{won}♟"
     if mod and won > 0:
-        won_display = f"+{won}♟ ×2🧪 = +{won * 2}♟"
+        won_display = f"+{won}♟ ×{mod_mult}🧪 = +{won * mod_mult}♟"
 
     text = (
         f"🧮 <b>{player.display_name}</b>\n"
         f"Баланс: {player.total_score}♟\n\n"
-        f"<b>Раунд:</b>\n{_format_bets(bets, mod)}\n\n"
+        f"<b>Раунд:</b>\n{_format_bets(bets, mod, mod_mult)}\n\n"
         f"Выигрыш: {won_display}\n"
         f"Проигрыш: −{lost}♟\n\n"
         f"<b>Итого раунд: {rt:+d}♟</b>\n"
         f"После раунда: <b>{player.total_score + rt}♟</b>"
     )
-    await callback.message.edit_text(text, reply_markup=_player_calc_kb(player_id, mod, len(bets) > 0, prev_id, next_id))
+    await callback.message.edit_text(text, reply_markup=_player_calc_kb(player_id, mod, len(bets) > 0, mults, mod_mult, prev_id, next_id))
 
 
 @router.callback_query(F.data.startswith("calc:mod:"))
@@ -172,6 +187,8 @@ async def cb_calc_chip(callback: CallbackQuery, state: FSMContext):
     mod = d.get("calc_mod", False)
     player_id = d.get("calc_player_id")
 
+    mults, mod_mult, _ = await _get_game_multipliers(callback)
+
     async with async_session() as session:
         game = await get_active_game_for_host(session, callback.from_user.id)
         if game:
@@ -184,8 +201,8 @@ async def cb_calc_chip(callback: CallbackQuery, state: FSMContext):
             prv = nxt = 0
 
     await callback.message.edit_text(
-        callback.message.html_text + f"\n\n▸ <b>{amount}♟</b> — [❌] [×2] [×3]",
-        reply_markup=_player_calc_kb(player_id, mod, len(bets) > 0, prv, nxt),
+        callback.message.html_text + f"\n\n▸ <b>{amount}♟</b> — [❌] [{'/'.join(f'×{m}' for m in mults)}]",
+        reply_markup=_player_calc_kb(player_id, mod, len(bets) > 0, mults, mod_mult, prv, nxt),
     )
     await callback.answer()
 
@@ -227,7 +244,8 @@ async def cb_calc_save(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Нет ставок для сохранения", show_alert=True)
         return
 
-    rt = _round_total(bets, mod)
+    _, mod_mult, _ = await _get_game_multipliers(callback)
+    rt = _round_total(bets, mod, mod_mult)
 
     async with async_session() as session:
         game = await get_active_game_for_host(session, callback.from_user.id)
