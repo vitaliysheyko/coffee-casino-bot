@@ -108,7 +108,7 @@ async def cb_start_round(callback: CallbackQuery, state: FSMContext):
 
 async def _send_round_messages(callback: CallbackQuery, game, lot):
     timer = game.timer_minutes or 5
-    host_text = format_host_card(game.current_round, game.total_rounds, lot.title, timer, len(game.players), game.settings)
+    host_text = format_host_card(game.current_round, game.total_rounds, lot.title, timer, len(game.players))
     cat_text = category_hint(lot)
 
     timer_msg = await callback.bot.send_message(
@@ -119,11 +119,8 @@ async def _send_round_messages(callback: CallbackQuery, game, lot):
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.message.answer(cat_text)
     await callback.message.answer(format_lot_cheatsheet(lot))
-
-    if game.settings:
-        if game.settings.modifiers_enabled:
-            await callback.message.answer(modifiers_reference(game.settings))
-        await callback.message.answer(sectors_reference(game.settings))
+    await callback.message.answer(modifiers_reference())
+    await callback.message.answer(sectors_reference())
 
     task = asyncio.create_task(
         _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)

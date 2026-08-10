@@ -1,6 +1,6 @@
 from typing import Optional
 
-from bot.models import GameSettings, Lot
+from bot.models import Lot
 
 
 def category_hint(lot: Lot) -> str:
@@ -26,56 +26,34 @@ def format_host_card(
     lot_title: str,
     timer: int,
     players_count: int,
-    settings: Optional[GameSettings] = None,
 ) -> str:
-    lines = [
-        f"🎯 <b>Раунд {round_number} из {total_rounds}</b>\n",
-        f"☕ Лот: <b>{lot_title}</b>",
-        f"⏱ Таймер: <b>{timer} мин</b>",
-        f"👥 Игроков за столом: <b>{players_count}</b>",
-    ]
-
-    if settings:
-        if settings.bet_limit:
-            lines.append(f"⚠️ Лимит ставок в раунде: <b>{settings.bet_limit}</b>")
-        elif settings.bet_limits_json and round_number <= len(settings.bet_limits_json):
-            rlimit = settings.bet_limits_json[round_number - 1]
-            if rlimit is not None:
-                lines.append(f"⚠️ Лимит ставок в этом раунде: <b>{rlimit}</b>")
-
-        if settings.modifiers_enabled:
-            lines.append(f"\n🧪 Модификаторы: ×{settings.modifier_multiplier}")
-            lines.append(f"   Ложка | Дичь | Нюхлер — лимит {settings.modifier_limit} на игрока")
-
-    lines.append("\n<i>Категории для ставок смотрите ниже ↓</i>")
-    return "\n".join(lines)
+    return (
+        f"🎯 <b>Раунд {round_number} из {total_rounds}</b>\n\n"
+        f"☕ Лот: <b>{lot_title}</b>\n"
+        f"⏱ Таймер: <b>{timer} мин</b>\n"
+        f"👥 Игроков за столом: <b>{players_count}</b>\n\n"
+        f"<i>Категории для ставок смотрите ниже ↓</i>"
+    )
 
 
-def modifiers_reference(settings: Optional[GameSettings] = None) -> str:
-    s = settings
-    mult = s.modifier_multiplier if s else 2
+def modifiers_reference() -> str:
     return (
         f"<b>🧪 Модификаторы</b>\n"
         f"• Ложка 🥄 — перемешать, угадать сорт\n"
         f"• Дичь 🦌 — экзотический способ заварки\n"
         f"• Нюхлер 👃 — определить по аромату с завязанными глазами\n"
-        f"Множитель: ×{mult} на все угаданные\n"
-        f"Лимит: {s.modifier_limit if s else 2} раза каждого за игру"
+        f"Множитель: ×2 на все угаданные\n"
+        f"Лимит: 2 раза каждого за игру"
     )
 
 
-def sectors_reference(settings: Optional[GameSettings] = None) -> str:
-    s = settings
-    sc = s.sector_continent if s else 2
-    sn = s.sector_country if s else 3
-    sp = s.sector_process if s else 2
-    so = s.sector_other if s else 3
+def sectors_reference() -> str:
     return (
         f"<b>📊 Множители секторов</b>\n"
-        f"• Континент: ×{sc}\n"
-        f"• Страна: ×{sn}\n"
-        f"• Обработка: ×{sp}\n"
-        f"• Прочее (высота/Q/сорт): ×{so}"
+        f"• Континент: ×2\n"
+        f"• Страна: ×3\n"
+        f"• Обработка: ×2\n"
+        f"• Прочее (высота/Q/сорт): ×3"
     )
 
 

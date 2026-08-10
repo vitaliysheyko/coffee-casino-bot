@@ -124,7 +124,6 @@ async def cb_game_refresh(callback: CallbackQuery, state: FSMContext):
                 lot.title if lot else "?",
                 game.timer_minutes or 5,
                 len(game.players),
-                game.settings,
             ),
             reply_markup=round_active_host_kb(),
         )
