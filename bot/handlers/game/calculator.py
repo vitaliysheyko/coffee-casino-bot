@@ -8,8 +8,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.database import async_session
 from bot.services.games import get_active_game_for_host, get_game_by_id
-from bot.models import GameSettings
-
+from bot.models import User
+from sqlalchemy import select
 router = Router()
 logger = logging.getLogger(__name__)
 
@@ -17,15 +17,13 @@ CHIPS = [5, 10, 25, 50, 100]
 
 
 async def _get_game_multipliers(callback: CallbackQuery) -> tuple[list[int], int, bool]:
-    """Returns (sector multipliers, modifier multiplier, modifiers enabled)"""
     async with async_session() as session:
-        game = await get_active_game_for_host(session, callback.from_user.id)
-        if game:
-            game = await get_game_by_id(session, game.id)
-            s = game.settings if game.settings else GameSettings(game_id=game.id)
-            mults = list(dict.fromkeys([s.sector_continent, s.sector_country, s.sector_process, s.sector_other]))
-            return sorted(mults), s.modifier_multiplier, s.modifiers_enabled
-    return [2, 3], 2, True  # defaults
+        result = await session.execute(select(User).where(User.id == callback.from_user.id))
+        user = result.scalar_one_or_none()
+        if user:
+            mults = list(dict.fromkeys([user.sector_continent, user.sector_country, user.sector_process, user.sector_other]))
+            return sorted(mults), user.modifier_multiplier, user.modifiers_enabled
+    return [2, 3], 2, True
 
 
 def _player_calc_kb(player_id: int, modifier_on: bool, has_bets: bool, mults: list[int], mod_mult: int,

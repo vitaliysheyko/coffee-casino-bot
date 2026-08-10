@@ -21,6 +21,14 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     quick_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
 
+    modifiers_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    modifier_multiplier: Mapped[int] = mapped_column(Integer, default=2)
+    sector_continent: Mapped[int] = mapped_column(Integer, default=2)
+    sector_country: Mapped[int] = mapped_column(Integer, default=3)
+    sector_process: Mapped[int] = mapped_column(Integer, default=2)
+    sector_other: Mapped[int] = mapped_column(Integer, default=3)
+    bet_limits_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
     lots: Mapped[list["Lot"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     games_as_host: Mapped[list["Game"]] = relationship(back_populates="host")
 
@@ -81,26 +89,6 @@ class Game(Base):
     current_lot: Mapped[Optional["Lot"]] = relationship(foreign_keys=[current_lot_id])
     players: Mapped[list["GamePlayer"]] = relationship(back_populates="game", cascade="all, delete-orphan")
     round_results: Mapped[list["RoundResult"]] = relationship(back_populates="game", cascade="all, delete-orphan")
-    settings: Mapped[Optional["GameSettings"]] = relationship(back_populates="game", cascade="all, delete-orphan")
-
-
-class GameSettings(Base):
-    __tablename__ = "game_settings"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id", ondelete="CASCADE"), unique=True)
-
-    modifiers_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    modifier_multiplier: Mapped[int] = mapped_column(Integer, default=2)
-
-    sector_continent: Mapped[int] = mapped_column(Integer, default=2)
-    sector_country: Mapped[int] = mapped_column(Integer, default=3)
-    sector_process: Mapped[int] = mapped_column(Integer, default=2)
-    sector_other: Mapped[int] = mapped_column(Integer, default=3)
-
-    bet_limits_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
-
-    game: Mapped["Game"] = relationship(back_populates="settings")
 
 
 class GamePlayer(Base):
