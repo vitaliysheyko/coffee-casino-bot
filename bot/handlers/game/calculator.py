@@ -78,9 +78,7 @@ def _format_bets(bets: list, mod: bool, mod_mult: int = 2) -> str:
         if m == 0:
             lines.append(f"{i}. {amt}♟ ❌ = −{amt}")
         else:
-            bonus = amt * m
-            mod_text = f" ×{mod_mult}🧪" if mod else ""
-            lines.append(f"{i}. {amt}♟ ×{m}{mod_text} = +{bonus * (mod_mult if mod else 1)}")
+            lines.append(f"{i}. {amt}♟ ×{m} = +{amt * m}")
     return "\n".join(lines)
 
 
@@ -148,23 +146,23 @@ async def _render(callback: CallbackQuery, state: FSMContext):
     prev_id = ids[idx - 1] if idx > 0 else 0
     next_id = ids[idx + 1] if idx < len(ids) - 1 else 0
 
-    rt = _round_total(bets, mod)
+    rt = _round_total(bets, mod, mod_mult)
     won = sum(b["amount"] * b["mult"] for b in bets if b["mult"])
     lost = sum(b["amount"] for b in bets if not b["mult"])
-
-    won_display = f"+{won}♟"
-    if mod and won > 0:
-        won_display = f"+{won}♟ ×{mod_mult}🧪 = +{won * mod_mult}♟"
 
     text = (
         f"🧮 <b>{player.display_name}</b>\n"
         f"Баланс: {player.total_score}♟\n\n"
-        f"<b>Раунд:</b>\n{_format_bets(bets, mod, mod_mult)}\n\n"
-        f"Выигрыш: {won_display}\n"
-        f"Проигрыш: −{lost}♟\n\n"
-        f"<b>Итого раунд: {rt:+d}♟</b>\n"
-        f"После раунда: <b>{player.total_score + rt}♟</b>"
+        f"<b>Ставки:</b>\n{_format_bets(bets, mod)}\n\n"
+        f"Сумма: +{won}♟"
     )
+    if lost:
+        text += f" − {lost}♟"
+    if mod and won:
+        text += f"\n🧪 ×{mod_mult} = <b>+{won * mod_mult}♟</b>"
+    text += f"\n\n<b>Итого раунд: {rt:+d}♟</b>\n"
+    text += f"После раунда: <b>{player.total_score + rt}♟</b>"
+
     await callback.message.edit_text(text, reply_markup=_player_calc_kb(player_id, mod, len(bets) > 0, mults, mod_mult, prev_id, next_id))
 
 
