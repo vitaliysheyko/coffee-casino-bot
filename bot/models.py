@@ -129,6 +129,7 @@ class RoundResult(Base):
 
     modifier_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     modifier_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    source: Mapped[str] = mapped_column(String(32), default="scoring")
 
     chips_won: Mapped[int] = mapped_column(Integer, default=0)
 

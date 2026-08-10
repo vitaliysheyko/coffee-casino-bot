@@ -48,6 +48,7 @@ def format_game_details(game: Game) -> str:
             lines.append(f"\nРаунд {round_num} — {lot_title}")
             for rr in results:
                 sign = "+" if rr.chips_won >= 0 else ""
-                lines.append(f"  {rr.player.display_name}: {sign}{rr.chips_won}")
+                source_note = " (ручной)" if rr.source == "calculator" else ""
+                lines.append(f"  {rr.player.display_name}: {sign}{rr.chips_won}{source_note}")
 
     return "\n".join(lines)

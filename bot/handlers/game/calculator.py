@@ -9,10 +9,10 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.constants import MODIFIER_LABELS, MODIFIER_TYPES
+from bot.constants import MODIFIER_LABELS, MODIFIER_TYPES, GameStatus
 from bot.database import async_session
+from bot.models import RoundResult, User
 from bot.services.games import get_active_game_for_host, get_game_by_id
-from bot.models import User
 from bot.services.scoring import count_modifier_usage
 from sqlalchemy import select
 
@@ -312,10 +312,43 @@ async def cb_calc_save(callback: CallbackQuery, state: FSMContext):
             return
 
         player.total_score += rt
+
+        round_recorded = False
+        if game.current_round > 0 and game.current_lot_id:
+            result = await session.execute(
+                select(RoundResult).where(
+                    RoundResult.game_id == game.id,
+                    RoundResult.player_id == player.id,
+                    RoundResult.round_number == game.current_round,
+                    RoundResult.source == "calculator",
+                )
+            )
+            rr = result.scalar_one_or_none()
+            if rr:
+                rr.chips_won = rt
+                rr.modifier_type = mod_type
+                rr.modifier_applied = bool(mod_type)
+            else:
+                rr = RoundResult(
+                    game_id=game.id,
+                    player_id=player.id,
+                    lot_id=game.current_lot_id,
+                    round_number=game.current_round,
+                    modifier_type=mod_type,
+                    modifier_applied=bool(mod_type),
+                    source="calculator",
+                    chips_won=rt,
+                )
+                session.add(rr)
+            round_recorded = True
+
         await session.commit()
         name = player.display_name
         new_balance = player.total_score
 
     await state.update_data(calc_bets=[], calc_mod_type=None)
     await _render(callback, state)
-    await callback.answer(f"{name}: {rt:+d}♟ → {new_balance}♟")
+    msg = f"{name}: {rt:+d}♟ → {new_balance}♟"
+    if not round_recorded:
+        msg += " (баланс обновлён, история раунда недоступна)"
+    await callback.answer(msg)

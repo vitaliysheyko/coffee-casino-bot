@@ -223,9 +223,25 @@ class TestModifierScoring:
         )
         assert rr.modifier_applied is True
         assert rr.modifier_type == "spoon"
-        # 2 correct * 1 * 2 base = 4, * 2 modifier = 8
+        assert rr.source == "scoring"
         assert rr.chips_won == 8
         assert player.total_score == 18
+
+    def test_apply_round_result_calculator_source(self):
+        lot = Lot(title="Test", country="Brazil")
+        player = GamePlayer(display_name="Bob", total_score=5)
+        rr = apply_round_result(
+            player,
+            lot,
+            round_number=1,
+            category_results={},
+            modifier_type=None,
+            modifier_multiplier=2,
+            source="calculator",
+        )
+        assert rr.source == "calculator"
+        assert rr.chips_won == -1  # one active category, wrong
+        assert player.total_score == 4
 
     async def test_count_modifier_usage(self, session):
         user = User(id=1, full_name="Host")

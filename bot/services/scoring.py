@@ -35,6 +35,7 @@ def apply_round_result(
     modifier_type: Optional[str] = None,
     modifier_multiplier: int = 2,
     bet_per_category: int = 1,
+    source: str = "scoring",
 ) -> RoundResult:
     cats = active_categories(lot)
     modifier_applied = modifier_type in MODIFIER_TYPES
@@ -58,6 +59,7 @@ def apply_round_result(
         roast_level_correct=category_results.get("roast_level", False),
         modifier_type=modifier_type,
         modifier_applied=modifier_applied,
+        source=source,
         chips_won=score_delta,
     )
 
@@ -125,6 +127,8 @@ def format_round_summary(round_number: int, lot: Lot, results: list[RoundResult]
             if correct_cats:
                 sign = "+" if r.chips_won >= 0 else ""
                 lines.append(f"  {player.display_name}: {sign}{r.chips_won}{mod_text} ({' + '.join(correct_cats)})")
+            elif r.source == "calculator":
+                lines.append(f"  {player.display_name}: {sign}{r.chips_won}{mod_text} (ручной подсчёт)")
             else:
                 lines.append(f"  {player.display_name}: {r.chips_won}{mod_text} (не угадал ни одной категории)")
     return "\n".join(lines)
