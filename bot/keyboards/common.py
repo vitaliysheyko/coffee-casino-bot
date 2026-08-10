@@ -8,7 +8,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🎲 Новая игра", callback_data="game:create"))
     builder.row(InlineKeyboardButton(text="⚡ Быстрая игра", callback_data="quick_game"))
     builder.row(InlineKeyboardButton(text="📜 История игр", callback_data="history:list"))
-    builder.row(InlineKeyboardButton(text="❓ Как играть", callback_data="help"))
+    builder.row(InlineKeyboardButton(text="📖 Правила", callback_data="help"))
     return builder.as_markup()
 
 

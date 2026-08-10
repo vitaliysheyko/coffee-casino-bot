@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import settings
 from bot.database import async_session
-from bot.keyboards.common import main_menu_kb
+from bot.keyboards.common import main_menu_kb, back_to_main_kb
 from bot.keyboards.game import game_setup_kb
 from bot.services.games import (
     get_game_by_id,
@@ -45,6 +45,40 @@ async def cb_main_menu(callback: CallbackQuery):
         "Кофейное казино\n\nВыберите действие:",
         reply_markup=main_menu_kb(),
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "help")
+async def cb_help(callback: CallbackQuery):
+    text = (
+        "<b>📖 Правила Кофейного казино</b>\n\n"
+        "<b>Игровое поле</b>\n"
+        "Каждый игрок получает лист с категориями:\n"
+        "• 🌍 Континент — ×2\n"
+        "• 🏳 Страна — ×3\n"
+        "• ⚙️ Обработка — ×2\n"
+        "• 🌱 Разновидность — ×3\n"
+        "• 🔥 Обжарка — ×2\n"
+        "• ⛰ Высота — ×3\n"
+        "• ⭐ Оценка Q — ×3\n\n"
+        "<b>Модификаторы (×2 к угаданному)</b>\n"
+        "• 🥄 Ложка — дегустация вслепую с перемешиванием\n"
+        "• 🦌 Дичь — нестандартный метод заваривания\n"
+        "• 👃 Нюхлер — определение только по аромату\n"
+        "Лимит: 2 использования каждого за игру\n\n"
+        "<b>Ставки</b>\n"
+        "Фишки: 5 / 10 / 25 / 50 / 100\n"
+        "Ставка на категорию × множитель сектора = выигрыш\n"
+        "Ошибка — ставка теряется\n\n"
+        "<b>Ход игры</b>\n"
+        "1. Раунд: ведущий заваривает лот, запускает таймер\n"
+        "2. Игроки пробуют, делают ставки на поле\n"
+        "3. Ревел: ведущий объявляет правильные ответы\n"
+        "4. Подсчёт: ведущий вносит ставки в калькулятор\n"
+        "5. Турнирная таблица обновляется\n\n"
+        "<b>Множители можно менять</b> в ⚙️ Множители"
+    )
+    await callback.message.edit_text(text, reply_markup=back_to_main_kb())
     await callback.answer()
 
 
