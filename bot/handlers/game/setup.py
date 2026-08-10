@@ -76,7 +76,7 @@ async def process_rounds(message: Message, state: FSMContext):
     await state.update_data(game_config={"total_rounds": rounds})
     await state.set_state(GameForm.setup_timer)
     await message.answer(
-        f"Раундов: {rounds}\n\nДлительность одного раунда в минутах? (1–30)",
+        f"Раундов: {rounds}\n\nДлительность одного раунда в минутах? (0–30, 0 = без таймера)",
         reply_markup=cancel_fsm_kb(),
     )
 
@@ -85,10 +85,10 @@ async def process_rounds(message: Message, state: FSMContext):
 async def process_timer_setup(message: Message, state: FSMContext):
     try:
         minutes = int(message.text.strip())
-        if not 1 <= minutes <= 30:
+        if not 0 <= minutes <= 30:
             raise ValueError
     except ValueError:
-        await message.answer("Введите число от 1 до 30:")
+        await message.answer("Введите число от 0 до 30 (0 = без таймера):")
         return
 
     data = await state.get_data()

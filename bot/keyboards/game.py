@@ -124,7 +124,7 @@ def select_game_lots_kb(lots: list[Lot], selected_ids: Optional[set] = None) -> 
     selected = selected_ids or set()
     builder = InlineKeyboardBuilder()
     for lot in lots:
-        prefix = "🟢 " if lot.id in selected else "⬜ "
+        prefix = "✅ " if lot.id in selected else "⬜ "
         builder.row(InlineKeyboardButton(
             text=f"{prefix}{lot.title}",
             callback_data=f"game:sel_lot:{lot.id}",

@@ -21,7 +21,7 @@ def _get_or_create_settings(game) -> GameSettings:
 
 def settings_kb(s: GameSettings) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    mod = "✅" if s.modifiers_enabled else "⏸"
+    mod = "🟢" if s.modifiers_enabled else "⬜"
     b.button(text=f"{mod} Модификатор ×{s.modifier_multiplier}", callback_data="sett:toggle_mod")
     b.button(text=f"🌍 Континент ×{s.sector_continent}", callback_data="sett:continent")
     b.button(text=f"🏳 Страна ×{s.sector_country}", callback_data="sett:country")

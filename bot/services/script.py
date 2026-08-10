@@ -27,10 +27,11 @@ def format_host_card(
     timer: int,
     players_count: int,
 ) -> str:
+    timer_text = "Без таймера" if timer == 0 else f"<b>{timer} мин</b>"
     return (
         f"🎯 <b>Раунд {round_number} из {total_rounds}</b>\n\n"
         f"☕ Лот: <b>{lot_title}</b>\n"
-        f"⏱ Таймер: <b>{timer} мин</b>\n"
+        f"⏱ Таймер: {timer_text}\n"
         f"👥 Игроков за столом: <b>{players_count}</b>\n\n"
         f"<i>Категории для ставок смотрите ниже ↓</i>"
     )

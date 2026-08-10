@@ -111,10 +111,16 @@ async def _send_round_messages(callback: CallbackQuery, game, lot):
     host_text = format_host_card(game.current_round, game.total_rounds, lot.title, timer, len(game.players))
     cat_text = category_hint(lot)
 
-    timer_msg = await callback.bot.send_message(
-        callback.message.chat.id,
-        f"⏱ <b>{timer}:00</b>",
-    )
+    if timer > 0:
+        timer_msg = await callback.bot.send_message(
+            callback.message.chat.id,
+            f"⏱ <b>{timer}:00</b>",
+        )
+    else:
+        await callback.bot.send_message(
+            callback.message.chat.id,
+            "⏱ <b>Без таймера</b>",
+        )
 
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.message.answer(cat_text)
@@ -122,10 +128,11 @@ async def _send_round_messages(callback: CallbackQuery, game, lot):
     await callback.message.answer(modifiers_reference())
     await callback.message.answer(sectors_reference())
 
-    task = asyncio.create_task(
-        _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
-    )
-    register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
+    if timer > 0:
+        task = asyncio.create_task(
+            _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
+        )
+        register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
 
 
 @router.callback_query(F.data.startswith("game:select_lot:"))
