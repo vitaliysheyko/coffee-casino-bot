@@ -173,19 +173,25 @@ async def cb_select_lot(callback: CallbackQuery, state: FSMContext):
     host_text = format_host_card(round_num, game.total_rounds, lot.title, timer, len(game.players))
     cat_text = category_hint(lot)
 
-    timer_msg = await callback.bot.send_message(
-        callback.message.chat.id,
-        f"⏱ <b>{timer}:00</b>",
-    )
+    if timer > 0:
+        timer_msg = await callback.bot.send_message(
+            callback.message.chat.id,
+            f"⏱ <b>{timer}:00</b>",
+        )
+    else:
+        await callback.bot.send_message(callback.message.chat.id, "⏱ <b>Без таймера</b>")
 
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.message.answer(cat_text)
     await callback.message.answer(format_lot_cheatsheet(lot))
+    await callback.message.answer(modifiers_reference())
+    await callback.message.answer(sectors_reference())
 
-    task = asyncio.create_task(
-        _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
-    )
-    register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
+    if timer > 0:
+        task = asyncio.create_task(
+            _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
+        )
+        register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
 
     await callback.answer(f"Раунд {round_num} запущен!")
 
@@ -253,22 +259,26 @@ async def cb_swap_to(callback: CallbackQuery, state: FSMContext):
     cancel_timer(callback.bot, game.id)
 
     timer = game.timer_minutes or 5
-    host_text = format_host_card(game.current_round, game.total_rounds, new_lot.title, timer, len(game.players), game.settings)
+    host_text = format_host_card(game.current_round, game.total_rounds, new_lot.title, timer, len(game.players))
 
-    timer_msg = await callback.bot.send_message(
-        callback.message.chat.id,
-        f"⏱ <b>{timer}:00</b>",
-    )
+    if timer > 0:
+        timer_msg = await callback.bot.send_message(
+            callback.message.chat.id,
+            f"⏱ <b>{timer}:00</b>",
+        )
+    else:
+        await callback.bot.send_message(callback.message.chat.id, "⏱ <b>Без таймера</b>")
 
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.message.answer(f"🔄 Лот заменён на: <b>{new_lot.title}</b>")
     await callback.message.answer(category_hint(new_lot))
     await callback.message.answer(format_lot_cheatsheet(new_lot))
 
-    task = asyncio.create_task(
-        _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
-    )
-    register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
+    if timer > 0:
+        task = asyncio.create_task(
+            _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
+        )
+        register_timer(game.id, task, timer_msg.chat.id, timer_msg.message_id)
 
     await callback.answer(f"Лот заменён — {new_lot.title}")
 
