@@ -5,6 +5,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
 
 from bot.constants import GameStatus
 from bot.database import async_session
+from bot.keyboards.game import reveal_kb
 from bot.services.games import get_game_by_id
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,9 @@ async def _run_timer(bot, chat_id: int, message_id: int, game_id: int, total_sec
             if game and game.status == GameStatus.ROUND_ACTIVE and game.current_lot:
                 game.status = GameStatus.REVEAL
                 await session.commit()
+                is_last = game.current_round >= game.total_rounds
+            else:
+                is_last = False
 
         try:
             lot = game.current_lot if game else None
@@ -71,7 +75,8 @@ async def _run_timer(bot, chat_id: int, message_id: int, game_id: int, total_sec
                 chat_id,
                 f"⏰ <b>Время вышло!</b>\n\n"
                 f"Ставки сделаны, пора ревелить лот «{lot.title if lot else '?'}».\n\n"
-                f"Используйте кнопку «Отметить кто угадал» на панели ниже.",
+                f"Нажмите «Отметить кто угадал» для подсчёта очков.",
+                reply_markup=reveal_kb(is_last),
             )
         except (TelegramAPIError, TelegramNetworkError) as e:
             logger.warning("Auto-reveal notification failed: %s", e)
