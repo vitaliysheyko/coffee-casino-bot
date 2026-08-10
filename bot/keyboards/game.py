@@ -86,7 +86,7 @@ def build_round_result_kb(
             callback_data=f"scoring:cat:{player_id}:{cat}",
         ))
     builder.row(InlineKeyboardButton(
-        text="✔️ Готово",
+        text="🟢 Готово",
         callback_data=f"scoring:done:{player_id}",
     ))
     builder.row(InlineKeyboardButton(
@@ -131,7 +131,7 @@ def select_game_lots_kb(lots: list[Lot], selected_ids: Optional[set] = None) -> 
         ))
     builder.row(InlineKeyboardButton(text="🔄 Очистить", callback_data="game:sel_lots_clear"))
     builder.row(
-        InlineKeyboardButton(text=f"✔️ Готово ({len(selected)} выбрано)", callback_data="game:sel_lots_done"),
+        InlineKeyboardButton(text=f"🟢 Готово ({len(selected)} выбрано)", callback_data="game:sel_lots_done"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="game:cancel"),
     )
     return builder.as_markup()
