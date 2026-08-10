@@ -53,6 +53,7 @@ async def get_game_by_code(session: AsyncSession, code: str) -> Optional[Game]:
         .options(
             selectinload(Game.players).selectinload(GamePlayer.user),
             selectinload(Game.current_lot),
+            selectinload(Game.host),
         )
     )
     return result.scalar_one_or_none()
@@ -65,6 +66,7 @@ async def get_game_by_id(session: AsyncSession, game_id: int) -> Optional[Game]:
         .options(
             selectinload(Game.players).selectinload(GamePlayer.user),
             selectinload(Game.current_lot),
+            selectinload(Game.host),
         )
     )
     return result.scalar_one_or_none()
@@ -77,6 +79,7 @@ async def get_active_game_for_host(session: AsyncSession, host_id: int) -> Optio
         .options(
             selectinload(Game.players).selectinload(GamePlayer.user),
             selectinload(Game.current_lot),
+            selectinload(Game.host),
         )
     )
     return result.scalar_one_or_none()
