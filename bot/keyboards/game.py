@@ -13,6 +13,7 @@ def game_setup_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="➕ Добавить игрока", callback_data="game:add_player"))
     builder.row(InlineKeyboardButton(text="➖ Убрать игрока", callback_data="game:remove_player"))
     builder.row(InlineKeyboardButton(text="🧮 Калькулятор", callback_data="game:calculator"))
+    builder.row(InlineKeyboardButton(text="⚙️ Настройки", callback_data="game:settings"))
     builder.row(InlineKeyboardButton(text="▶️ Начать игру", callback_data="game:start_game"))
     builder.row(InlineKeyboardButton(text="❌ Отменить игру", callback_data="game:cancel"))
     return builder.as_markup()

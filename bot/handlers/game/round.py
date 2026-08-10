@@ -20,7 +20,7 @@ from bot.keyboards.common import main_menu_kb
 from bot.services.games import get_active_game_for_host, get_game_by_id, format_players_list
 from bot.services.lots import get_user_lots, get_lot_by_id, format_lot_for_host
 from bot.services.scoring import active_categories
-from bot.services.script import format_host_card, format_lot_cheatsheet, category_hint
+from bot.services.script import format_host_card, format_lot_cheatsheet, category_hint, modifiers_reference, sectors_reference
 from bot.handlers.game._timer import cancel_timer, _run_timer, register_timer
 from bot.states.game import GameForm
 
@@ -108,7 +108,7 @@ async def cb_start_round(callback: CallbackQuery, state: FSMContext):
 
 async def _send_round_messages(callback: CallbackQuery, game, lot):
     timer = game.timer_minutes or 5
-    host_text = format_host_card(game.current_round, game.total_rounds, lot.title, timer, len(game.players))
+    host_text = format_host_card(game.current_round, game.total_rounds, lot.title, timer, len(game.players), game.settings)
     cat_text = category_hint(lot)
 
     timer_msg = await callback.bot.send_message(
@@ -119,6 +119,11 @@ async def _send_round_messages(callback: CallbackQuery, game, lot):
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.message.answer(cat_text)
     await callback.message.answer(format_lot_cheatsheet(lot))
+
+    if game.settings:
+        if game.settings.modifiers_enabled:
+            await callback.message.answer(modifiers_reference(game.settings))
+        await callback.message.answer(sectors_reference(game.settings))
 
     task = asyncio.create_task(
         _run_timer(callback.bot, timer_msg.chat.id, timer_msg.message_id, game.id, timer * 60)
@@ -244,7 +249,7 @@ async def cb_swap_to(callback: CallbackQuery, state: FSMContext):
     cancel_timer(callback.bot, game.id)
 
     timer = game.timer_minutes or 5
-    host_text = format_host_card(game.current_round, game.total_rounds, new_lot.title, timer, len(game.players))
+    host_text = format_host_card(game.current_round, game.total_rounds, new_lot.title, timer, len(game.players), game.settings)
 
     timer_msg = await callback.bot.send_message(
         callback.message.chat.id,
@@ -276,7 +281,7 @@ async def cb_swap_cancel(callback: CallbackQuery):
         lot = game.current_lot
 
     timer = game.timer_minutes or 5
-    host_text = format_host_card(game.current_round, game.total_rounds, lot.title if lot else "?", timer, len(game.players))
+    host_text = format_host_card(game.current_round, game.total_rounds, lot.title if lot else "?", timer, len(game.players), game.settings)
     await callback.message.edit_text(host_text, reply_markup=round_active_host_kb())
     await callback.answer()
 
